@@ -92,6 +92,10 @@
     align-items:center; gap:7px;
   }
   .block-title .em{font-size:1.1rem;}
+  .auto-hint{
+    font-size:.76rem; color:var(--sub); background:#eef2f6;
+    border-radius:9px; padding:7px 10px; margin:0 0 10px;
+  }
   .steps{list-style:none; margin:0; padding:0;}
   .step{
     display:flex; align-items:flex-start; gap:11px;
@@ -119,9 +123,18 @@
   }
   .empty{color:var(--sub); font-size:.88rem; padding:6px 2px;}
 
-  /* 自動保存トースト */
+  /* 保存ボタン */
+  .save{
+    position:sticky; bottom:10px; margin-top:18px;
+    background:var(--accent); color:#fff; border:none; width:100%;
+    padding:15px; border-radius:13px; font-size:1rem; font-weight:700;
+    cursor:pointer; box-shadow:0 4px 14px rgba(58,110,165,.32);
+  }
+  .save:active{transform:translateY(1px);}
+
+  /* トースト */
   #toast{
-    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    position:fixed; bottom:84px; left:50%; transform:translateX(-50%);
     background:rgba(29,39,51,.88); color:#fff; padding:8px 16px;
     border-radius:20px; font-size:.82rem; opacity:0; transition:.25s;
     pointer-events:none; z-index:9; white-space:nowrap;
@@ -170,6 +183,9 @@
   <!-- ② ルーティン -->
   <div id="routine"></div>
 
+  <!-- 保存 -->
+  <button class="save" id="saveBtn">記録を保存</button>
+
   <!-- ③ 履歴 -->
   <div class="card" style="margin-top:18px;">
     <button class="hist-toggle" id="histToggle">▸ 記録履歴を見る</button>
@@ -177,9 +193,9 @@
   </div>
 
   <footer>
-    タップするたびに自動で保存されます（保存ボタンは不要）。<br>
+    やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.2 — 朝夜別記録・自動保存・昨日のさかのぼり・ノーケア対応。
+    叩き台 v0.3 — 保存ボタン復活・夜勤の自動切替・夜勤明け3枠・朝にUV追加。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -201,8 +217,7 @@ const ITEMS = {
   pao:        {name:'PAO（表情筋トレ）',          cat:CAT.pao,        note:'歯磨き後・素肌・週5日'},
   toner:      {name:'トリートメントソフナー',       cat:CAT.toner,      note:'全ケアの土台'},
   ocher:      {name:'OCHER ザ セラム',            cat:CAT.allinone,   note:'時短オールインワン（UV機能なし）'},
-  uvMain:     {name:'Bioré UV アスリズム',         cat:CAT.uv,         note:'朝・メインUV'},
-  uvStick:    {name:'Clear Stick UV（携帯）',      cat:CAT.uv,         note:'外出先の塗り直し用'},
+  uvMain:     {name:'日焼け止め（Bioré UV など）',  cat:CAT.uv,         note:'外出時・レチノール翌朝は必須'},
   cleanseOil: {name:'マイルドクレンジングオイル',    cat:CAT.cleanseOil, note:'乾いた肌・乳化して流す'},
   washBiore:  {name:'メンズビオレ ザフェイス',       cat:CAT.washNormal, note:'通常洗顔（泥ジェルと交互）'},
   washFancl:  {name:'FANCL 泥ジェル洗顔',          cat:CAT.washClay,   note:'軽く濡らした肌・週3-4回'},
@@ -215,16 +230,21 @@ const ITEMS = {
 const SHIFTS = [
   {id:'early',  label:'早番',     sub:''},
   {id:'late',   label:'遅番',     sub:''},
-  {id:'night',  label:'夜勤',     sub:'出勤前'},
-  {id:'after',  label:'夜勤明け',  sub:'攻め休み'},
+  {id:'night',  label:'夜勤',     sub:'自動切替'},
+  {id:'after',  label:'夜勤明け',  sub:'3枠'},
   {id:'off1',   label:'休み1日目', sub:'最小限'},
-  {id:'off2',   label:'休み2日目', sub:'フル'},
+  {id:'off2',   label:'休み2日目', sub:'朝＋夜'},
 ];
 
-const morningWork = () => [
+/* ルーティン部品 */
+const morningWork = () => [          // 出勤日の朝（UV付き）
+  {item:'pao'}, {item:'toner'}, {item:'ocher'},
+  {item:'uvMain', note:'外出時・レチノール翌朝は必須'},
+];
+const shukkinNight = () => [         // 夜勤の出勤前（夕方なのでUVなし）
   {item:'pao'}, {item:'toner'}, {item:'ocher'},
 ];
-const nightFull = () => [
+const nightFull = () => [            // 就寝前フル（攻めあり）
   {item:'cleanseOil'},
   {item:'washBiore', alt:'washFancl', altLabel:'メンズビオレ or FANCL泥ジェル（交互）'},
   {item:'toner'},
@@ -233,38 +253,83 @@ const nightFull = () => [
   {item:'cream'},
   {item:'device', choice:'attack'},
 ];
-const nightAfter = () => [
+const nightGuard = () => [           // 守りのみ（攻めスキップ）
   {item:'cleanseOil', note:'肌の状態次第で'},
   {item:'washBiore', alt:'washFancl', altLabel:'通常洗顔のみ（泥ジェルのパック/マッサージNG）'},
   {item:'toner'},
   {item:'serum'},
   {item:'cream'},
 ];
-const minimal = () => [
+const minimal = () => [              // 休みの朝（最小限）
   {item:'pao', note:'余裕があれば'}, {item:'toner'}, {item:'ocher'},
+  {item:'uvMain', note:'外出するなら'},
+];
+const wakeLight = () => [            // 夜勤明け・起床後（昼）
+  {item:'toner', note:'任意・スキップOK'},
+  {item:'ocher'},
+  {item:'uvMain', note:'外出するなら'},
 ];
 
-const ROUTINES = {
-  early: {morning:morningWork(), night:nightFull()},
-  late:  {morning:morningWork(), night:nightFull()},
-  night: {morning:morningWork(), night:null},
-  after: {morning:null,          night:nightAfter()},
-  off1:  {morning:minimal(),     night:null},
-  off2:  {morning:null,          night:nightFull()},
+/* スロット（その日のケアの枠）定義
+   夜勤は「前日も夜勤か」で帰宅後枠を自動表示 */
+const SLOT_META = {
+  m:       {icon:'🌅', label:'朝 / 出勤前'},
+  n:       {icon:'🌙', label:'夜 / 就寝前'},
+  kitaku:  {icon:'🌅', label:'帰宅後・就寝前（朝）'},
+  kishou:  {icon:'☀️', label:'起床後（昼）'},
+  shukkin: {icon:'🌆', label:'出勤前（夕方〜夜）'},
 };
 
+function slotsFor(shift, prevWasNight){
+  switch(shift){
+    case 'early':
+    case 'late':
+      return [
+        {key:'m', steps:morningWork()},
+        {key:'n', steps:nightFull()},
+      ];
+    case 'night': {
+      const s=[];
+      if(prevWasNight) s.push({key:'kitaku', steps:nightGuard(),
+        hint:'前日も夜勤の記録があるので、帰宅後（朝）の枠を表示しています。'});
+      s.push({key:'shukkin', steps:shukkinNight()});
+      if(!prevWasNight) s[s.length-1].hint='連続夜勤の中日は、前日を夜勤として記録すると「帰宅後（朝）」の枠も表示されます。';
+      return s;
+    }
+    case 'after':
+      return [
+        {key:'kitaku', steps:nightGuard()},
+        {key:'kishou', steps:wakeLight()},
+        {key:'n', steps:nightFull(),
+          hint:'翌日は日勤帯に戻れるので、夜はフルケアOK（攻めも選べます）。'},
+      ];
+    case 'off1':
+      return [{key:'m', label:'朝（最小限）', steps:minimal()}];
+    case 'off2':
+      return [
+        {key:'m', label:'朝（最小限）', steps:minimal()},
+        {key:'n', steps:nightFull()},
+      ];
+    default: return [];
+  }
+}
+
 /* ===========================================================
-   保存（v2：朝/夜別・ノーケア対応）
-   record = {date, shift, morning:[id], night:[id], noCare:bool}
+   保存（v3：スロット別・ノーケア対応）
+   record = {date, shift, noCare, slots:{key:[itemId]}}
    =========================================================== */
 const LS_V1 = 'mcl_log_v1';
-const LS_LOG = 'mcl_log_v2';
+const LS_V2 = 'mcl_log_v2';
+const LS_LOG = 'mcl_log_v3';
 const LS_SHIFT = 'mcl_shift_today';
 
 function pad(n){ return String(n).padStart(2,'0'); }
 function dateKeyOf(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
 const todayKey = dateKeyOf(new Date());
 const yesterdayKey = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dateKeyOf(d); })();
+function dayBefore(key){
+  const d=new Date(key+'T00:00:00'); d.setDate(d.getDate()-1); return dateKeyOf(d);
+}
 
 function loadLog(){ try{return JSON.parse(localStorage.getItem(LS_LOG))||[];}catch(e){return [];} }
 function saveLog(log){ localStorage.setItem(LS_LOG, JSON.stringify(log)); }
@@ -276,24 +341,35 @@ function upsertRec(rec){
   saveLog(log);
 }
 
-// 旧形式（v1：itemsひとまとめ）からの引き継ぎ。朝/夜はシフトの手順表から推定。
-(function migrateV1(){
+/* 旧形式からの引き継ぎ（v2: morning/night → slots m/n、v1: items一括） */
+(function migrate(){
   if(localStorage.getItem(LS_LOG)) return;
-  let old=null;
-  try{ old=JSON.parse(localStorage.getItem(LS_V1)); }catch(e){}
-  if(!old||!Array.isArray(old)) return;
-  const conv=old.map(r=>{
-    const morning=[], night=[];
-    const rt=ROUTINES[r.shift]||{};
-    const mIds=(rt.morning||[]).map(s=>s.item);
-    (r.items||[]).forEach(id=>{ (mIds.includes(id)?morning:night).push(id); });
-    return {date:r.date, shift:r.shift, morning, night, noCare:false};
+  let v2=null;
+  try{ v2=JSON.parse(localStorage.getItem(LS_V2)); }catch(e){}
+  if(!v2){
+    let v1=null;
+    try{ v1=JSON.parse(localStorage.getItem(LS_V1)); }catch(e){}
+    if(!v1||!Array.isArray(v1)) return;
+    // v1→v2相当：朝のアイテム（pao/toner/ocher/uv系）とそれ以外で振り分け
+    const morningIds=['pao','toner','ocher','uvMain','uvStick'];
+    v2=v1.map(r=>{
+      const morning=[], night=[];
+      (r.items||[]).forEach(id=>{ (morningIds.includes(id)?morning:night).push(id); });
+      return {date:r.date, shift:r.shift, morning, night, noCare:false};
+    });
+  }
+  if(!Array.isArray(v2)) return;
+  const v3=v2.map(r=>{
+    const slots={};
+    if((r.morning||[]).length) slots.m=r.morning;
+    if((r.night||[]).length) slots.n=r.night;
+    return {date:r.date, shift:r.shift, noCare:!!r.noCare, slots};
   });
-  saveLog(conv);
+  saveLog(v3);
 })();
 
 /* ===========================================================
-   状態（editDate：今日 or 昨日）
+   状態（editDate：今日 or 昨日）／保存は「記録を保存」ボタンで
    =========================================================== */
 let state = { editDate: todayKey, shift: null, noCare: false, checked: new Set() };
 
@@ -303,10 +379,9 @@ function loadStateFor(date){
   if(rec){
     state.shift = rec.shift;
     state.noCare = !!rec.noCare;
-    state.checked = new Set([
-      ...(rec.morning||[]).map(id=>'morning:'+id),
-      ...(rec.night||[]).map(id=>'night:'+id),
-    ]);
+    const uids=[];
+    Object.entries(rec.slots||{}).forEach(([k,ids])=>ids.forEach(id=>uids.push(k+':'+id)));
+    state.checked = new Set(uids);
   }else{
     state.shift = (date===todayKey) ? (localStorage.getItem(LS_SHIFT)||null) : null;
     state.noCare = false;
@@ -314,22 +389,23 @@ function loadStateFor(date){
   }
 }
 
-function persist(){
-  if(!state.shift && !state.noCare) return;
-  const morning=[], night=[];
+function doSave(){
+  if(!state.shift && !state.noCare){ alert('先にシフトを選んでください。'); return; }
+  const slots={};
   state.checked.forEach(uid=>{
-    const i = uid.indexOf(':');
-    const p = uid.slice(0,i), id = uid.slice(i+1);
-    (p==='morning'?morning:night).push(id);
+    const i=uid.indexOf(':');
+    const k=uid.slice(0,i), id=uid.slice(i+1);
+    (slots[k]=slots[k]||[]).push(id);
   });
   upsertRec({
     date: state.editDate,
     shift: state.shift,
     noCare: state.noCare,
-    morning: state.noCare ? [] : morning,
-    night: state.noCare ? [] : night,
+    slots: state.noCare ? {} : slots,
   });
   flashToast();
+  renderBanner();        // 昨日分を保存したら案内が消える等
+  renderWarnings();
   renderHistoryIfOpen();
 }
 
@@ -338,7 +414,7 @@ function flashToast(){
   const t=document.getElementById('toast');
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer=setTimeout(()=>t.classList.remove('show'),1200);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),1400);
 }
 
 /* ===========================================================
@@ -346,7 +422,7 @@ function flashToast(){
    =========================================================== */
 function itemsOf(rec){
   if(!rec || rec.noCare) return [];
-  return [...(rec.morning||[]), ...(rec.night||[])];
+  return Object.values(rec.slots||{}).flat();
 }
 function recordsBefore(date){
   return loadLog().filter(r=>r.date<date).sort((a,b)=>b.date.localeCompare(a.date));
@@ -373,7 +449,7 @@ function computeWarnings(){
     out.push({lv:'alert', html:`<b>翌朝UV必須</b>：前回レチノールを使用。朝は日焼け止めを必ず。（OCHERにUV機能なし）`});
   }
   if(state.shift==='after'){
-    out.push({lv:'note', html:`<b>夜勤明け</b>：レチノール・美顔器・泥ジェルのパックはスキップ（守りのみ）。`});
+    out.push({lv:'note', html:`<b>夜勤明け</b>：帰宅後（朝）は攻めスキップ（守りのみ）。夜の就寝前はフルでOK。`});
   }
   const ret7 = catCount(recordsInWindow(state.editDate,7), CAT.retinol);
   if(ret7>=3){
@@ -408,14 +484,13 @@ function renderBanner(){
   if(isEditingYesterday()){
     const d=document.createElement('div');
     d.className='banner edit';
-    d.innerHTML=`📝 <b>昨日（${fmtMD(yesterdayKey)}）の記録を編集中</b>
-      <div class="row"><button class="bbtn ghost" id="backToday">✅ 終わった — 今日に戻る</button></div>`;
+    d.innerHTML=`📝 <b>昨日（${fmtMD(yesterdayKey)}）の記録を編集中</b>（変更後は「記録を保存」を押してください）
+      <div class="row"><button class="bbtn ghost" id="backToday">✅ 今日に戻る</button></div>`;
     el.appendChild(d);
     d.querySelector('#backToday').onclick=()=>{ loadStateFor(todayKey); renderAll(); };
     return;
   }
 
-  // 今日表示中で、昨日の記録が無いときだけ案内
   if(!getRec(yesterdayKey)){
     const d=document.createElement('div');
     d.className='banner';
@@ -427,7 +502,7 @@ function renderBanner(){
     el.appendChild(d);
     d.querySelector('#fillY').onclick=()=>{ loadStateFor(yesterdayKey); renderAll(); };
     d.querySelector('#ncY').onclick=()=>{
-      upsertRec({date:yesterdayKey, shift:null, noCare:true, morning:[], night:[]});
+      upsertRec({date:yesterdayKey, shift:null, noCare:true, slots:{}});
       flashToast(); renderAll();
     };
   }
@@ -444,17 +519,19 @@ function renderShifts(){
     b.onclick=()=>{
       state.shift=s.id;
       if(state.editDate===todayKey) localStorage.setItem(LS_SHIFT,s.id);
-      // 新しいシフトの手順に存在しないチェックは外す
+      // 新しいシフトに存在しない枠のチェックは外す
       const valid=new Set();
-      const r=ROUTINES[s.id];
-      (r.morning||[]).forEach(st=>valid.add('morning:'+st.item));
-      (r.night||[]).forEach(st=>valid.add('night:'+st.item));
+      slotsFor(s.id, prevWasNight()).forEach(sl=>sl.steps.forEach(st=>valid.add(sl.key+':'+st.item)));
       state.checked=new Set([...state.checked].filter(uid=>valid.has(uid)));
-      persist();
       renderAll();
     };
     el.appendChild(b);
   });
+}
+
+function prevWasNight(){
+  const prev=getRec(dayBefore(state.editDate));
+  return !!(prev && prev.shift==='night');
 }
 
 function renderWarnings(){
@@ -474,50 +551,46 @@ function renderNoCare(){
   if(state.noCare){
     const d=document.createElement('div');
     d.className='nocare-card';
-    d.innerHTML=`<span class="big">🚫</span>${dayWord}は<b>ノーケアの日</b>として記録済み。<br>
+    d.innerHTML=`<span class="big">🚫</span>${dayWord}は<b>ノーケアの日</b>。<br>
       そういう日があってもOK。次の日はフルケアで再開！<br>
+      「記録を保存」を押すと確定します。<br>
       <button id="undoNc">取り消してケアを記録する</button>`;
     el.appendChild(d);
-    d.querySelector('#undoNc').onclick=()=>{
-      state.noCare=false; persist(); renderAll();
-    };
+    d.querySelector('#undoNc').onclick=()=>{ state.noCare=false; renderAll(); };
     return;
   }
 
   const b=document.createElement('button');
   b.className='nocare-link';
   b.textContent=`🚫 ${dayWord}は何もしなかった（ノーケアとして記録）`;
-  b.onclick=()=>{
-    // チェック済み項目はメモリ上に残す（誤タップでも「取り消し」で復元できる）
-    state.noCare=true;
-    persist(); renderAll();
-  };
+  b.onclick=()=>{ state.noCare=true; renderAll(); };
   el.appendChild(b);
 }
 
 function renderRoutine(){
   const root=document.getElementById('routine'); root.innerHTML='';
+  document.getElementById('saveBtn').style.display = state.noCare||state.shift ? 'block' : 'none';
   if(state.noCare) return;
   if(!state.shift){
-    root.innerHTML='<div class="card empty">上でシフトを選ぶと、ケア手順が表示されます。<br>やったものをタップ → その場で自動保存されます。</div>';
+    root.innerHTML='<div class="card empty">上でシフトを選ぶと、ケア手順が表示されます。<br>やったものをタップ → 最後に「記録を保存」。</div>';
     return;
   }
-  const r=ROUTINES[state.shift];
-  const blocks=[
-    {key:'morning', title:'朝 / 出勤前', em:'🌅', steps:r.morning},
-    {key:'night',   title:'夜 / 就寝前', em:'🌙', steps:r.night},
-  ];
-  let any=false;
 
-  blocks.forEach(b=>{
-    if(!b.steps||!b.steps.length) return;
-    any=true;
+  slotsFor(state.shift, prevWasNight()).forEach(slot=>{
+    const meta=SLOT_META[slot.key];
     const h=document.createElement('div');
     h.className='block-title';
-    h.innerHTML=`<span class="em">${b.em}</span>${b.title}`;
+    h.innerHTML=`<span class="em">${meta.icon}</span>${slot.label||meta.label}`;
     root.appendChild(h);
 
-    const hasChoice=b.steps.some(s=>s.choice);
+    if(slot.hint){
+      const hd=document.createElement('div');
+      hd.className='auto-hint';
+      hd.textContent='ℹ️ '+slot.hint;
+      root.appendChild(hd);
+    }
+
+    const hasChoice=slot.steps.some(s=>s.choice);
     if(hasChoice){
       const hint=document.createElement('div');
       hint.className='choice-hint';
@@ -526,9 +599,9 @@ function renderRoutine(){
     }
 
     const ul=document.createElement('ul'); ul.className='steps';
-    b.steps.forEach(step=>{
+    slot.steps.forEach(step=>{
       const it=ITEMS[step.item];
-      const uid=b.key+':'+step.item;
+      const uid=slot.key+':'+step.item;
       const checked=state.checked.has(uid);
       const li=document.createElement('li');
       li.className='step'+(checked?' checked':'');
@@ -544,24 +617,18 @@ function renderRoutine(){
         if(checked){ state.checked.delete(uid); }
         else{
           state.checked.add(uid);
-          // 攻め排他：レチノールと美顔器は同夜どちらか一方
           if(step.choice==='attack'){
-            b.steps.forEach(other=>{
-              if(other!==step && other.choice==='attack') state.checked.delete(b.key+':'+other.item);
+            slot.steps.forEach(other=>{
+              if(other!==step && other.choice==='attack') state.checked.delete(slot.key+':'+other.item);
             });
           }
         }
-        persist();
         renderRoutine();
       };
       ul.appendChild(li);
     });
     root.appendChild(ul);
   });
-
-  if(!any){
-    root.innerHTML='<div class="card empty">このシフトに登録ルーティンがありません（叩き台では未設定）。</div>';
-  }
 }
 
 function shiftLabelOf(id){
@@ -577,15 +644,22 @@ function renderHistory(){
   const log=loadLog().slice().sort((a,b)=>b.date.localeCompare(a.date));
   if(!log.length){ el.innerHTML='<div class="empty">まだ記録がありません。</div>'; return; }
   el.innerHTML='';
+  const order=['kitaku','m','kishou','shukkin','n'];
   log.forEach(r=>{
     const div=document.createElement('div'); div.className='hist-item';
     let body;
     if(r.noCare){
       body='🚫 ノーケア（何もしなかった日）';
     }else{
-      const m=(r.morning||[]).map(shortName).join('、');
-      const n=(r.night||[]).map(shortName).join('、');
-      body=`🌅 ${m||'—'}<br>🌙 ${n||'—'}`;
+      const lines=[];
+      order.forEach(k=>{
+        const ids=(r.slots||{})[k];
+        if(ids&&ids.length){
+          const meta=SLOT_META[k];
+          lines.push(`${meta.icon} ${ids.map(shortName).join('、')}`);
+        }
+      });
+      body=lines.join('<br>')||'—';
     }
     div.innerHTML=`
       <div class="hist-head">
@@ -619,6 +693,7 @@ function renderAll(){
 
 /* 初期化 */
 document.getElementById('today').textContent=fmtHeader();
+document.getElementById('saveBtn').onclick=doSave;
 document.getElementById('histToggle').onclick=function(){
   const l=document.getElementById('histList');
   const open=l.style.display!=='none';
