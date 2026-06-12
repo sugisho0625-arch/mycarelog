@@ -46,6 +46,11 @@
   }
   .bbtn.primary{background:var(--accent); color:#fff;}
   .bbtn.ghost{border-color:var(--warn-line); color:var(--warn-ink);}
+  .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+  .chip{
+    border:1px solid var(--accent); background:#fff; color:var(--accent);
+    border-radius:14px; padding:4px 12px; font-size:.8rem; font-weight:600; cursor:pointer;
+  }
 
   /* シフト選択 */
   .shifts{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
@@ -131,6 +136,14 @@
     cursor:pointer; box-shadow:0 4px 14px rgba(58,110,165,.32);
   }
   .save:active{transform:translateY(1px);}
+  .save.dirty{
+    background:#d97b29;
+    box-shadow:0 4px 14px rgba(217,123,41,.4);
+  }
+  .save.saved{
+    background:#8fa6ba;
+    box-shadow:0 2px 8px rgba(20,40,70,.15);
+  }
 
   /* トースト */
   #toast{
@@ -155,6 +168,22 @@
   .hist-head .sh{color:var(--accent); font-weight:600;}
   .hist-items{color:var(--ink); line-height:1.7;}
   .hist-del{color:var(--danger-ink); background:none; border:none; font-size:.78rem; cursor:pointer;}
+
+  /* ボトル管理 */
+  .bottle-row{border-top:1px solid var(--line); padding:10px 2px;}
+  .bottle-row:first-child{border-top:none;}
+  .bottle-head{display:flex; justify-content:space-between; align-items:center; gap:8px;}
+  .bottle-name{font-size:.88rem; font-weight:600;}
+  .bottle-sub{font-size:.74rem; color:var(--sub); margin-top:2px;}
+  .bottle-btn{
+    flex:0 0 auto; border:1px solid var(--accent); background:#fff; color:var(--accent);
+    border-radius:8px; padding:5px 10px; font-size:.76rem; font-weight:600; cursor:pointer;
+  }
+  .bottle-btn.finish{border-color:var(--warn-line); color:var(--warn-ink);}
+  .bottle-bar{height:7px; background:#e8edf2; border-radius:4px; margin-top:7px; overflow:hidden;}
+  .bottle-bar div{height:100%; background:var(--done); border-radius:4px;}
+  .bottle-bar div.low{background:#e09a3c;}
+  .bottle-bar div.empty{background:var(--danger-ink);}
   footer{text-align:center; color:var(--sub); font-size:.72rem; margin-top:24px; line-height:1.5;}
 </style>
 </head>
@@ -186,8 +215,14 @@
   <!-- 保存 -->
   <button class="save" id="saveBtn">記録を保存</button>
 
-  <!-- ③ 履歴 -->
+  <!-- ③ ボトル管理 -->
   <div class="card" style="margin-top:18px;">
+    <button class="hist-toggle" id="bottleToggle">▸ ボトル管理（買い足しタイマー）</button>
+    <div class="hist-list" id="bottleList" style="display:none;"></div>
+  </div>
+
+  <!-- ④ 履歴 -->
+  <div class="card">
     <button class="hist-toggle" id="histToggle">▸ 記録履歴を見る</button>
     <div class="hist-list" id="histList" style="display:none;"></div>
   </div>
@@ -195,7 +230,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.3 — 保存ボタン復活・夜勤の自動切替・夜勤明け3枠・朝にUV追加。
+    叩き台 v0.6 — 過去7日のさかのぼり記録・履歴から過去日を編集・未保存の変更を保存ボタンで可視化。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -227,13 +262,15 @@ const ITEMS = {
   device:     {name:'STELLA BEAUTE 美顔器',        cat:CAT.device,     note:'数日に1回・ANUAと同夜NG'},
 };
 
+/* 消耗品（ボトル管理の対象。PAO・美顔器は中身が減らないので対象外） */
+const CONSUMABLES = ['toner','serum','retinol','cream','ocher','uvMain','cleanseOil','washBiore','washFancl'];
+
 const SHIFTS = [
   {id:'early',  label:'早番',     sub:''},
   {id:'late',   label:'遅番',     sub:''},
-  {id:'night',  label:'夜勤',     sub:'自動切替'},
-  {id:'after',  label:'夜勤明け',  sub:'3枠'},
-  {id:'off1',   label:'休み1日目', sub:'最小限'},
-  {id:'off2',   label:'休み2日目', sub:'朝＋夜'},
+  {id:'night',  label:'夜勤',     sub:'今夜出勤'},
+  {id:'after',  label:'夜勤明け',  sub:'休日'},
+  {id:'off',    label:'休み',     sub:'朝＋夜'},
 ];
 
 /* ルーティン部品 */
@@ -303,12 +340,11 @@ function slotsFor(shift, prevWasNight){
         {key:'n', steps:nightFull(),
           hint:'翌日は日勤帯に戻れるので、夜はフルケアOK（攻めも選べます）。'},
       ];
-    case 'off1':
-      return [{key:'m', label:'朝（最小限）', steps:minimal()}];
-    case 'off2':
+    case 'off':
       return [
         {key:'m', label:'朝（最小限）', steps:minimal()},
-        {key:'n', steps:nightFull()},
+        {key:'n', steps:nightFull(),
+          hint:'帰省などで夜は何もしない日は、空のまま保存すればOK（「—（ケアなし）」として残ります）。'},
       ];
     default: return [];
   }
@@ -322,6 +358,7 @@ const LS_V1 = 'mcl_log_v1';
 const LS_V2 = 'mcl_log_v2';
 const LS_LOG = 'mcl_log_v3';
 const LS_SHIFT = 'mcl_shift_today';
+const LS_BOTTLES = 'mcl_bottles_v1';
 
 function pad(n){ return String(n).padStart(2,'0'); }
 function dateKeyOf(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
@@ -368,10 +405,19 @@ function upsertRec(rec){
   saveLog(v3);
 })();
 
+/* v0.4：休み1日目/2日目 → 「休み」に統合（過去の記録も読み替え） */
+(function migrateOff(){
+  const log=loadLog(); let changed=false;
+  log.forEach(r=>{ if(r.shift==='off1'||r.shift==='off2'){ r.shift='off'; changed=true; } });
+  if(changed) saveLog(log);
+  const s=localStorage.getItem(LS_SHIFT);
+  if(s==='off1'||s==='off2') localStorage.setItem(LS_SHIFT,'off');
+})();
+
 /* ===========================================================
    状態（editDate：今日 or 昨日）／保存は「記録を保存」ボタンで
    =========================================================== */
-let state = { editDate: todayKey, shift: null, noCare: false, checked: new Set() };
+let state = { editDate: todayKey, shift: null, noCare: false, checked: new Set(), dirty: false };
 
 function loadStateFor(date){
   state.editDate = date;
@@ -387,6 +433,20 @@ function loadStateFor(date){
     state.noCare = false;
     state.checked = new Set();
   }
+  state.dirty = false;
+}
+
+/* 日付の呼び名（今日／昨日／6/10） */
+function dayWordOf(date){
+  if(date===todayKey) return '今日';
+  if(date===yesterdayKey) return '昨日';
+  return fmtMD(date);
+}
+/* 表示用ラベル（昨日（6/12）／6/10）— 日付の二重表示を避ける */
+function dayLabelOf(date){
+  if(date===todayKey) return '今日';
+  if(date===yesterdayKey) return `昨日（${fmtMD(date)}）`;
+  return fmtMD(date);
 }
 
 function doSave(){
@@ -403,10 +463,33 @@ function doSave(){
     noCare: state.noCare,
     slots: state.noCare ? {} : slots,
   });
+  state.dirty=false;
   flashToast();
-  renderBanner();        // 昨日分を保存したら案内が消える等
+  updateSaveBtn();
+  renderBanner();        // 未記録日の案内を更新
   renderWarnings();
   renderHistoryIfOpen();
+  renderBottlesIfOpen(); // 使用回数が変わるので残量表示も更新
+}
+
+function markDirty(){
+  state.dirty=true;
+  updateSaveBtn();
+}
+
+function updateSaveBtn(){
+  const b=document.getElementById('saveBtn');
+  b.style.display=(state.noCare||state.shift)?'block':'none';
+  b.classList.remove('dirty','saved');
+  if(state.dirty){
+    b.classList.add('dirty');
+    b.textContent='記録を保存（未保存の変更あり）';
+  }else if(getRec(state.editDate)){
+    b.classList.add('saved');
+    b.textContent='✓ 保存済み';
+  }else{
+    b.textContent='記録を保存';
+  }
 }
 
 let toastTimer=null;
@@ -415,6 +498,58 @@ function flashToast(){
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>t.classList.remove('show'),1400);
+}
+
+/* ===========================================================
+   ボトル管理（買い足しタイマー）
+   bottles = { itemId: [{start:'YYYY-MM-DD', end:'YYYY-MM-DD'|null}, ...] }
+   使用回数はケア記録から数える（記録1チェック＝1回）
+   =========================================================== */
+function loadBottles(){ try{return JSON.parse(localStorage.getItem(LS_BOTTLES))||{};}catch(e){return {};} }
+function saveBottles(b){ localStorage.setItem(LS_BOTTLES, JSON.stringify(b)); }
+
+function usesBetween(itemId, startKey, endKey){
+  let c=0;
+  loadLog().forEach(r=>{
+    if(r.noCare) return;
+    if(r.date<startKey) return;
+    if(endKey && r.date>endKey) return;
+    Object.values(r.slots||{}).forEach(ids=>{ if(ids.includes(itemId)) c++; });
+  });
+  return c;
+}
+
+function bottleInfo(itemId){
+  const cycles=loadBottles()[itemId]||[];
+  const current=cycles.find(c=>!c.end)||null;
+  const done=cycles.filter(c=>c.end);
+  let learned=null;
+  if(done.length){
+    const counts=done.map(c=>usesBetween(itemId,c.start,c.end)).filter(n=>n>0);
+    if(counts.length) learned=Math.round(counts.reduce((a,b)=>a+b,0)/counts.length);
+  }
+  let currentUses=0, daysUsed=0, remainPct=null;
+  if(current){
+    currentUses=usesBetween(itemId,current.start,null);
+    daysUsed=Math.max(0, Math.round((new Date(todayKey+'T00:00:00')-new Date(current.start+'T00:00:00'))/86400000));
+    if(learned) remainPct=Math.max(0, Math.round(100*(1-currentUses/learned)));
+  }
+  return {current, learned, currentUses, daysUsed, remainPct, doneCount:done.length};
+}
+
+function computeBottleNotices(){
+  const out=[];
+  CONSUMABLES.forEach(id=>{
+    const b=bottleInfo(id);
+    if(!b.current || b.remainPct===null) return;
+    const name=shortName(id);
+    if(b.remainPct<=0){
+      out.push({lv:'alert', html:`🧴 <b>${name}</b>：推定の使い切り回数（約${b.learned}回）に到達。新品の用意を！使い切ったら「🏁」も忘れずに。`});
+    }else if(b.remainPct<=20){
+      out.push({lv:'note', html:`🧴 <b>${name}</b>：残り約${b.remainPct}%。そろそろ買い足しを。`});
+    }
+  });
+  return out;
 }
 
 /* ===========================================================
@@ -455,7 +590,7 @@ function computeWarnings(){
   if(ret7>=3){
     out.push({lv:'note', html:`<b>レチノール頻度</b>：直近7日で${ret7}回。週2〜3回が目安、今夜は控えめに。`});
   }
-  if(prevHadRetinol && (state.shift==='early'||state.shift==='late'||state.shift==='off2')){
+  if(prevHadRetinol && (state.shift==='early'||state.shift==='late'||state.shift==='off')){
     out.push({lv:'note', html:`今夜は<b>レチノール↔美顔器</b>どちらか一方。前回レチノールなら今夜は美顔器でもOK（同じ夜に両方はNG）。`});
   }
   const pao7 = catCount(recordsInWindow(state.editDate,7), CAT.pao);
@@ -481,36 +616,59 @@ function isEditingYesterday(){ return state.editDate===yesterdayKey; }
 function renderBanner(){
   const el=document.getElementById('banner'); el.innerHTML='';
 
-  if(isEditingYesterday()){
+  // 過去日の編集モード（昨日でも、それより前でも）
+  if(state.editDate!==todayKey){
     const d=document.createElement('div');
     d.className='banner edit';
-    d.innerHTML=`📝 <b>昨日（${fmtMD(yesterdayKey)}）の記録を編集中</b>（変更後は「記録を保存」を押してください）
+    d.innerHTML=`📝 <b>${dayLabelOf(state.editDate)}の記録を編集中</b>（変更後は「記録を保存」を押してください）
       <div class="row"><button class="bbtn ghost" id="backToday">✅ 今日に戻る</button></div>`;
     el.appendChild(d);
     d.querySelector('#backToday').onclick=()=>{ loadStateFor(todayKey); renderAll(); };
     return;
   }
 
-  if(!getRec(yesterdayKey)){
-    const d=document.createElement('div');
-    d.className='banner';
-    d.innerHTML=`💭 昨日（${fmtMD(yesterdayKey)}）の記録がありません。
+  // 直近7日の未記録日を集める（昨日を含む）
+  const missing=[];
+  for(let i=1;i<=7;i++){
+    const dt=new Date(); dt.setDate(dt.getDate()-i);
+    const k=dateKeyOf(dt);
+    if(!getRec(k)) missing.push(k);
+  }
+  if(!missing.length) return;
+
+  const d=document.createElement('div');
+  d.className='banner';
+  const hasY=missing.includes(yesterdayKey);
+  const others=missing.filter(k=>k!==yesterdayKey);
+  let html='';
+  if(hasY){
+    html+=`💭 昨日（${fmtMD(yesterdayKey)}）の記録がありません。
       <div class="row">
         <button class="bbtn primary" id="fillY">昨日の分をつける</button>
         <button class="bbtn" id="ncY">昨日はノーケアだった</button>
       </div>`;
-    el.appendChild(d);
+  }
+  if(others.length){
+    html+=`<div style="margin-top:${hasY?'9px':'0'};">📅 ほかに未記録の日（タップでさかのぼり記録）：</div>
+      <div class="chips">${others.map(k=>`<button class="chip" data-d="${k}">${fmtMD(k)}</button>`).join('')}</div>`;
+  }
+  d.innerHTML=html;
+  el.appendChild(d);
+  if(hasY){
     d.querySelector('#fillY').onclick=()=>{ loadStateFor(yesterdayKey); renderAll(); };
     d.querySelector('#ncY').onclick=()=>{
       upsertRec({date:yesterdayKey, shift:null, noCare:true, slots:{}});
       flashToast(); renderAll();
     };
   }
+  d.querySelectorAll('.chip').forEach(c=>{
+    c.onclick=()=>{ loadStateFor(c.getAttribute('data-d')); renderAll(); window.scrollTo(0,0); };
+  });
 }
 
 function renderShifts(){
   document.getElementById('shiftLabel').textContent =
-    isEditingYesterday() ? `① 昨日（${fmtMD(yesterdayKey)}）のシフト` : '① 今日のシフト';
+    state.editDate===todayKey ? '① 今日のシフト' : `① ${dayLabelOf(state.editDate)}のシフト`;
   const el=document.getElementById('shifts'); el.innerHTML='';
   SHIFTS.forEach(s=>{
     const b=document.createElement('button');
@@ -523,6 +681,7 @@ function renderShifts(){
       const valid=new Set();
       slotsFor(s.id, prevWasNight()).forEach(sl=>sl.steps.forEach(st=>valid.add(sl.key+':'+st.item)));
       state.checked=new Set([...state.checked].filter(uid=>valid.has(uid)));
+      markDirty();
       renderAll();
     };
     el.appendChild(b);
@@ -536,7 +695,7 @@ function prevWasNight(){
 
 function renderWarnings(){
   const el=document.getElementById('warns'); el.innerHTML='';
-  computeWarnings().forEach(w=>{
+  [...computeWarnings(), ...computeBottleNotices()].forEach(w=>{
     const d=document.createElement('div');
     d.className='warn '+(w.lv==='alert'?'alert':'note');
     d.innerHTML=`<span class="ic">${w.lv==='alert'?'⚠️':'💡'}</span><div>${w.html}</div>`;
@@ -546,7 +705,7 @@ function renderWarnings(){
 
 function renderNoCare(){
   const el=document.getElementById('nocareArea'); el.innerHTML='';
-  const dayWord = isEditingYesterday() ? '昨日' : '今日';
+  const dayWord = dayWordOf(state.editDate);
 
   if(state.noCare){
     const d=document.createElement('div');
@@ -556,20 +715,20 @@ function renderNoCare(){
       「記録を保存」を押すと確定します。<br>
       <button id="undoNc">取り消してケアを記録する</button>`;
     el.appendChild(d);
-    d.querySelector('#undoNc').onclick=()=>{ state.noCare=false; renderAll(); };
+    d.querySelector('#undoNc').onclick=()=>{ state.noCare=false; markDirty(); renderAll(); };
     return;
   }
 
   const b=document.createElement('button');
   b.className='nocare-link';
   b.textContent=`🚫 ${dayWord}は何もしなかった（ノーケアとして記録）`;
-  b.onclick=()=>{ state.noCare=true; renderAll(); };
+  b.onclick=()=>{ state.noCare=true; markDirty(); renderAll(); };
   el.appendChild(b);
 }
 
 function renderRoutine(){
   const root=document.getElementById('routine'); root.innerHTML='';
-  document.getElementById('saveBtn').style.display = state.noCare||state.shift ? 'block' : 'none';
+  updateSaveBtn();
   if(state.noCare) return;
   if(!state.shift){
     root.innerHTML='<div class="card empty">上でシフトを選ぶと、ケア手順が表示されます。<br>やったものをタップ → 最後に「記録を保存」。</div>';
@@ -623,6 +782,7 @@ function renderRoutine(){
             });
           }
         }
+        markDirty();
         renderRoutine();
       };
       ul.appendChild(li);
@@ -651,12 +811,15 @@ function renderHistory(){
     if(r.noCare){
       body='🚫 ノーケア（何もしなかった日）';
     }else{
+      // そのシフトに存在する枠は空でも表示（空＝やらなかった、が見えるように）
+      const prevN=(()=>{ const p=loadLog().find(x=>x.date===dayBefore(r.date)); return !!(p&&p.shift==='night'); })();
+      const defined=slotsFor(r.shift, prevN).map(s=>s.key);
       const lines=[];
       order.forEach(k=>{
-        const ids=(r.slots||{})[k];
-        if(ids&&ids.length){
+        const ids=(r.slots||{})[k]||[];
+        if(ids.length || defined.includes(k)){
           const meta=SLOT_META[k];
-          lines.push(`${meta.icon} ${ids.map(shortName).join('、')}`);
+          lines.push(`${meta.icon} ${ids.length ? ids.map(shortName).join('、') : '<span style="color:var(--sub)">—（ケアなし）</span>'}`);
         }
       });
       body=lines.join('<br>')||'—';
@@ -664,12 +827,22 @@ function renderHistory(){
     div.innerHTML=`
       <div class="hist-head">
         <span><b>${r.date}</b> <span class="sh">${shiftLabelOf(r.shift)}</span></span>
-        <button class="hist-del" data-d="${r.date}">削除</button>
+        <span>
+          <button class="hist-del" data-e="${r.date}" style="color:var(--accent);">編集</button>
+          <button class="hist-del" data-d="${r.date}">削除</button>
+        </span>
       </div>
       <div class="hist-items">${body}</div>`;
     el.appendChild(div);
   });
-  el.querySelectorAll('.hist-del').forEach(btn=>{
+  el.querySelectorAll('[data-e]').forEach(btn=>{
+    btn.onclick=()=>{
+      loadStateFor(btn.getAttribute('data-e'));
+      renderAll();
+      window.scrollTo(0,0);
+    };
+  });
+  el.querySelectorAll('[data-d]').forEach(btn=>{
     btn.onclick=()=>{
       const d=btn.getAttribute('data-d');
       saveLog(loadLog().filter(r=>r.date!==d));
@@ -680,6 +853,55 @@ function renderHistory(){
 }
 function renderHistoryIfOpen(){
   if(document.getElementById('histList').style.display!=='none') renderHistory();
+}
+
+function renderBottles(){
+  const el=document.getElementById('bottleList');
+  el.innerHTML='';
+  CONSUMABLES.forEach(id=>{
+    const b=bottleInfo(id);
+    const row=document.createElement('div'); row.className='bottle-row';
+    let sub='', bar='', btn='';
+    if(!b.current){
+      sub = b.doneCount
+        ? `これまで${b.doneCount}本使い切り${b.learned?`・1本あたり約${b.learned}回`:''}`
+        : 'まだ計測していません。新品をおろす日にスタート！';
+      btn = `<button class="bottle-btn" data-act="start" data-id="${id}">🆕 新品おろした</button>`;
+    }else{
+      const since=`開始 ${fmtMD(b.current.start)}・${b.currentUses}回使用・${b.daysUsed}日経過`;
+      if(b.remainPct===null){
+        sub=`${since}<br>（1本目を計測中。使い切ると残量を推定できるようになります）`;
+      }else{
+        sub=`${since}・残り約${b.remainPct}%（1本≈${b.learned}回）`;
+        const cls=b.remainPct<=0?'empty':(b.remainPct<=20?'low':'');
+        bar=`<div class="bottle-bar"><div class="${cls}" style="width:${Math.max(3,b.remainPct)}%"></div></div>`;
+      }
+      btn = `<button class="bottle-btn finish" data-act="end" data-id="${id}">🏁 使い切った</button>`;
+    }
+    row.innerHTML=`<div class="bottle-head"><div><div class="bottle-name">${shortName(id)}</div><div class="bottle-sub">${sub}</div></div>${btn}</div>${bar}`;
+    el.appendChild(row);
+  });
+  el.querySelectorAll('.bottle-btn').forEach(btn=>{
+    btn.onclick=()=>{
+      const id=btn.getAttribute('data-id'), act=btn.getAttribute('data-act');
+      const bottles=loadBottles();
+      const arr=bottles[id]=bottles[id]||[];
+      if(act==='start'){
+        if(!confirm(shortName(id)+'：新しいボトルを今日からスタートしますか？')) return;
+        arr.push({start:todayKey, end:null});
+      }else{
+        if(!confirm(shortName(id)+'：今日で使い切りましたか？（1本の寿命として学習します）')) return;
+        const cur=arr.find(c=>!c.end);
+        if(cur) cur.end=todayKey;
+      }
+      saveBottles(bottles);
+      flashToast();
+      renderBottles(); renderWarnings();
+    };
+  });
+}
+function renderBottlesIfOpen(){
+  if(document.getElementById('bottleList').style.display!=='none') renderBottles();
 }
 
 function renderAll(){
@@ -700,6 +922,13 @@ document.getElementById('histToggle').onclick=function(){
   l.style.display=open?'none':'block';
   this.textContent=(open?'▸':'▾')+' 記録履歴を見る';
   if(!open) renderHistory();
+};
+document.getElementById('bottleToggle').onclick=function(){
+  const l=document.getElementById('bottleList');
+  const open=l.style.display!=='none';
+  l.style.display=open?'none':'block';
+  this.textContent=(open?'▸':'▾')+' ボトル管理（買い足しタイマー）';
+  if(!open) renderBottles();
 };
 loadStateFor(todayKey);
 renderAll();
