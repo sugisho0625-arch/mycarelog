@@ -223,6 +223,28 @@
   .data-note{font-size:.78rem; color:var(--sub); margin:4px 0 10px;}
   .data-row{display:flex; gap:8px;}
 
+  /* 振り返り */
+  .insight-hero{
+    display:flex; gap:10px; margin:4px 0 14px;
+  }
+  .insight-stat{
+    flex:1; background:var(--accent-soft); border:1px solid #cfe0ef;
+    border-radius:11px; padding:11px 8px; text-align:center;
+  }
+  .insight-stat .num{font-size:1.5rem; font-weight:700; color:var(--accent); line-height:1.1;}
+  .insight-stat .lbl{font-size:.72rem; color:var(--sub); margin-top:3px;}
+  .insight-period{font-size:.78rem; color:var(--sub); font-weight:600; margin:6px 0 8px;}
+  .ins-row{
+    display:flex; align-items:center; gap:10px; padding:7px 2px;
+    border-top:1px solid var(--line); font-size:.86rem;
+  }
+  .ins-row:first-child{border-top:none;}
+  .ins-row .inm{flex:1; min-width:0;}
+  .ins-row .ict{flex:0 0 auto; font-weight:700; color:var(--accent);}
+  .ins-bar{height:6px; background:#e8edf2; border-radius:3px; margin-top:4px; overflow:hidden;}
+  .ins-bar div{height:100%; background:var(--accent); border-radius:3px;}
+  .insight-foot{font-size:.74rem; color:var(--sub); margin-top:12px; line-height:1.5;}
+
   footer{text-align:center; color:var(--sub); font-size:.72rem; margin-top:24px; line-height:1.5;}
 </style>
 </head>
@@ -253,8 +275,14 @@
   <!-- 保存 -->
   <button class="save" id="saveBtn">記録を保存</button>
 
-  <!-- ③ マイアイテム -->
+  <!-- ③ 振り返り -->
   <div class="card" style="margin-top:18px;">
+    <button class="hist-toggle" id="insightToggle">▸ 振り返り（記録の成果）</button>
+    <div class="hist-list" id="insightPanel" style="display:none;"></div>
+  </div>
+
+  <!-- ④ マイアイテム -->
+  <div class="card">
     <button class="hist-toggle" id="itemsToggle">▸ マイアイテム（登録・編集）</button>
     <div class="hist-list" id="itemsPanel" style="display:none;"></div>
   </div>
@@ -265,7 +293,7 @@
     <div class="hist-list" id="bottleList" style="display:none;"></div>
   </div>
 
-  <!-- ⑤ 履歴 -->
+  <!-- ⑤ ボトル管理は上に移動済み。履歴 -->
   <div class="card">
     <button class="hist-toggle" id="histToggle">▸ 記録履歴を見る</button>
     <div class="hist-list" id="histList" style="display:none;"></div>
@@ -286,7 +314,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.8.1 — 頭皮ケアを朝の枠にも追加（朝晩どちらでも記録・1日合計30分以内は自己管理）。
+    叩き台 v0.9 — 振り返り画面（記録の成果を見える化）・さかのぼり案内を直近3日に調整。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -567,6 +595,7 @@ function doSave(){
   renderWarnings();
   renderHistoryIfOpen();
   renderBottlesIfOpen();
+  renderInsightsIfOpen();
 }
 
 function markDirty(){
@@ -722,8 +751,9 @@ function renderBanner(){
     return;
   }
 
+  // さかのぼり案内は直近3日まで（責められ感を出さない。それ以前は履歴の「編集」から）
   const missing=[];
-  for(let i=1;i<=7;i++){
+  for(let i=1;i<=3;i++){
     const dt=new Date(); dt.setDate(dt.getDate()-i);
     const k=dateKeyOf(dt);
     if(!getRec(k)) missing.push(k);
@@ -1160,6 +1190,73 @@ function renderBottlesIfOpen(){
 }
 
 /* ===========================================================
+   振り返り（記録の成果）— 継続の見返りを見せる
+   =========================================================== */
+function monthKeyNow(){ const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1); }
+const CAT_TARGET = {  // 月あたりの目安（参考表示用）
+  'レチノール類':'目安 月8〜12回（週2〜3回）',
+  '表情筋トレ':'目安 月20日前後（週5日）',
+};
+function renderInsights(){
+  const el=document.getElementById('insightPanel');
+  const log=loadLog();
+  if(!log.length){
+    el.innerHTML='<div class="empty">まだ記録がありません。数日つけると、ここに「続けた成果」が見えてきます。</div>';
+    return;
+  }
+  const totalDays=log.length;
+  const mk=monthKeyNow();
+  const thisMonth=log.filter(r=>r.date.slice(0,7)===mk);
+  const monthDays=thisMonth.length;
+  const noCareMonth=thisMonth.filter(r=>r.noCare).length;
+
+  // 今月のカテゴリ別回数
+  const counts={};
+  thisMonth.forEach(r=>{
+    if(r.noCare) return;
+    Object.values(r.slots||{}).forEach(ids=>ids.forEach(id=>{
+      const c=itemCat(id); if(!c) return;
+      counts[c]=(counts[c]||0)+1;
+    }));
+  });
+  const rows=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const max=rows.length?rows[0][1]:1;
+  const mLabel=Number(mk.split('-')[1])+'月';
+
+  let html=`
+    <div class="insight-hero">
+      <div class="insight-stat"><div class="num">${totalDays}</div><div class="lbl">累計の記録日数</div></div>
+      <div class="insight-stat"><div class="num">${monthDays}</div><div class="lbl">${mLabel}の記録日数</div></div>
+    </div>
+    <div class="insight-period">📊 ${mLabel}のケア内訳</div>`;
+
+  if(!rows.length){
+    html+=`<div class="empty">${mLabel}はまだケアの記録がありません${noCareMonth?`（ノーケア${noCareMonth}日）`:''}。</div>`;
+  }else{
+    html+=rows.map(([cat,n])=>{
+      const t=CAT_TARGET[cat];
+      return `<div class="ins-row">
+        <div class="inm">${cat}${t?`<div style="font-size:.72rem;color:var(--sub)">${t}</div>`:''}
+          <div class="ins-bar"><div style="width:${Math.max(5,Math.round(100*n/max))}%"></div></div>
+        </div>
+        <div class="ict">${n}回</div>
+      </div>`;
+    }).join('');
+    if(noCareMonth) html+=`<div class="ins-row"><div class="inm" style="color:var(--sub)">🚫 ノーケアの日</div><div class="ict" style="color:var(--sub)">${noCareMonth}日</div></div>`;
+  }
+
+  html+=`<div class="insight-foot">
+    記録を続けるほど、買い足しタイマーの精度が上がり、この振り返りも正確になります。<br>
+    空いた日があっても大丈夫——気づいた日からまた記録すればOKです。<br>
+    この記録は、あなただけの「実証データ」になります。
+  </div>`;
+  el.innerHTML=html;
+}
+function renderInsightsIfOpen(){
+  if(document.getElementById('insightPanel').style.display!=='none') renderInsights();
+}
+
+/* ===========================================================
    バックアップ（書き出し／読み込み）
    =========================================================== */
 function buildBackup(){
@@ -1217,6 +1314,7 @@ function wireToggle(btnId, panelId, title, onOpen){
     if(!open && onOpen) onOpen();
   };
 }
+wireToggle('insightToggle','insightPanel','振り返り（記録の成果）',renderInsights);
 wireToggle('itemsToggle','itemsPanel','マイアイテム（登録・編集）',renderItems);
 wireToggle('bottleToggle','bottleList','ボトル管理（買い足しタイマー）',renderBottles);
 wireToggle('histToggle','histList','記録履歴を見る',renderHistory);
