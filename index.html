@@ -286,7 +286,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.7 — マイアイテム登録・同カテゴリの商品選択・バックアップ。
+    叩き台 v0.8.1 — 頭皮ケアを朝の枠にも追加（朝晩どちらでも記録・1日合計30分以内は自己管理）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -302,10 +302,10 @@ const CAT = {
   cleanseOil:'クレンジングオイル', washNormal:'洗顔(通常)', washClay:'洗顔(クレイ)',
   toner:'化粧水', serumGuard:'守りの美容液', retinol:'レチノール類',
   cream:'クリーム', allinone:'オールインワン', uv:'日焼け止め',
-  device:'美顔器', pao:'表情筋トレ'
+  device:'美顔器', scalp:'頭皮ケアデバイス', pao:'表情筋トレ'
 };
 /* 中身が減らないカテゴリ（ボトル管理の対象外） */
-const NON_CONSUMABLE_CATS = [CAT.device, CAT.pao];
+const NON_CONSUMABLE_CATS = [CAT.device, CAT.scalp, CAT.pao];
 
 /* 初期アイテム（田畑さんの実データ・spec.md §3。IDは過去の記録と互換） */
 const DEFAULT_ITEMS = [
@@ -321,6 +321,7 @@ const DEFAULT_ITEMS = [
   {id:'retinol',    name:'ANUA レチノール0.3',        cat:CAT.retinol,    note:'攻め・週2〜3回・翌朝UV必須'},
   {id:'cream',      name:'スキンエンパワリングクリーム', cat:CAT.cream,      note:'毎晩・美顔器併用OK'},
   {id:'device',     name:'STELLA BEAUTE 美顔器',      cat:CAT.device,     note:'数日に1回・レチノールと同夜NG'},
+  {id:'scalp',      name:'STELLA BEAUTE 美顔器（頭皮）', cat:CAT.scalp,     note:'頭皮・毎日OK・1日30分以内・レチノール併用OK'},
 ];
 
 const SHIFTS = [
@@ -340,11 +341,13 @@ const stepMorningWork = () => [
   {cats:[CAT.toner]},
   {cats:[CAT.allinone]},
   {cats:[CAT.uv], note:'外出時・レチノール翌朝は必須'},
+  {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
 ];
 const stepShukkin = () => [
   {cats:[CAT.pao]},
   {cats:[CAT.toner]},
   {cats:[CAT.allinone]},
+  {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
 ];
 const stepNightFull = () => [
   {cats:[CAT.cleanseOil]},
@@ -354,6 +357,7 @@ const stepNightFull = () => [
   {cats:[CAT.retinol], choice:'attack'},
   {cats:[CAT.cream]},
   {cats:[CAT.device], choice:'attack'},
+  {cats:[CAT.scalp], note:'頭皮・毎日OK・レチノールと併用OK'},
 ];
 const stepNightGuard = () => [
   {cats:[CAT.cleanseOil], note:'肌の状態次第で'},
@@ -361,17 +365,20 @@ const stepNightGuard = () => [
   {cats:[CAT.toner]},
   {cats:[CAT.serumGuard]},
   {cats:[CAT.cream]},
+  {cats:[CAT.scalp], note:'頭皮・毎日OK'},
 ];
 const stepMinimal = () => [
   {cats:[CAT.pao], note:'余裕があれば'},
   {cats:[CAT.toner]},
   {cats:[CAT.allinone]},
   {cats:[CAT.uv], note:'外出するなら'},
+  {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
 ];
 const stepWake = () => [
   {cats:[CAT.toner], note:'任意・スキップOK'},
   {cats:[CAT.allinone]},
   {cats:[CAT.uv], note:'外出するなら'},
+  {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
 ];
 
 const SLOT_META = {
@@ -447,11 +454,18 @@ function upsertRec(rec){
    マイアイテム（登録商品）
    =========================================================== */
 (function ensureItems(){
-  try{
-    const a=JSON.parse(localStorage.getItem(LS_ITEMS));
-    if(Array.isArray(a)&&a.length) return;
-  }catch(e){}
-  localStorage.setItem(LS_ITEMS, JSON.stringify(DEFAULT_ITEMS));
+  let a=null;
+  try{ a=JSON.parse(localStorage.getItem(LS_ITEMS)); }catch(e){}
+  if(!Array.isArray(a)||!a.length){
+    localStorage.setItem(LS_ITEMS, JSON.stringify(DEFAULT_ITEMS));
+    return;
+  }
+  // 既存ユーザーに後から追加された標準アイテム（頭皮ケア等）を補完
+  let changed=false;
+  DEFAULT_ITEMS.forEach(def=>{
+    if(!a.some(it=>it.id===def.id)){ a.push(def); changed=true; }
+  });
+  if(changed) localStorage.setItem(LS_ITEMS, JSON.stringify(a));
 })();
 function allItems(){ try{return JSON.parse(localStorage.getItem(LS_ITEMS))||[];}catch(e){return [];} }
 function saveItems(arr){ localStorage.setItem(LS_ITEMS, JSON.stringify(arr)); }
