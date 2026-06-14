@@ -219,6 +219,26 @@
   }
   .item-form .row{display:flex; gap:8px; margin-top:11px;}
 
+  /* 昨日のケアバー */
+  .yday-bar{
+    background:#fff; border:1px solid var(--line); border-left:4px solid var(--accent);
+    border-radius:11px; padding:10px 13px; margin-bottom:14px; cursor:pointer;
+    box-shadow:0 1px 2px rgba(20,40,70,.04);
+  }
+  .yday-bar .yhead{display:flex; justify-content:space-between; align-items:center;}
+  .yday-bar .ytitle{font-size:.78rem; color:var(--sub); font-weight:600;}
+  .yday-bar .yshift{font-size:.78rem; color:var(--accent); font-weight:700;}
+  .yday-bar .yline{font-size:.84rem; margin-top:5px; line-height:1.6;}
+  .yday-bar .yedit{font-size:.72rem; color:var(--accent); margin-top:4px;}
+
+  /* 「昨日も」マーク（今日の各項目の右側） */
+  .ymark{
+    flex:0 0 auto; align-self:center; font-size:.7rem; font-weight:700;
+    color:#7a6320; background:#fdf3dc; border:1px solid #ecd49a;
+    border-radius:11px; padding:2px 8px; white-space:nowrap;
+  }
+  .ichip .ydot{color:#c79a3a; font-weight:700;}
+
   /* データ管理 */
   .data-note{font-size:.78rem; color:var(--sub); margin:4px 0 10px;}
   .data-row{display:flex; gap:8px;}
@@ -256,6 +276,9 @@
   </header>
 
   <div id="banner"></div>
+
+  <!-- 昨日のケア（見える化・タップで昨日編集へ） -->
+  <div id="yesterdayBar"></div>
 
   <!-- ① シフト -->
   <div class="card">
@@ -314,7 +337,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.9 — 振り返り画面（記録の成果を見える化）・さかのぼり案内を直近3日に調整。
+    叩き台 v0.10 — 昨日のケアを上部に表示・今日の各項目に「昨日も」マーク。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -790,6 +813,38 @@ function renderBanner(){
   });
 }
 
+/* 昨日のケア（見える化）— 今日を見ているときだけ・昨日の記録があるときだけ */
+const SLOT_ORDER=['kitaku','m','kishou','shukkin','n'];
+function renderYesterdayBar(){
+  const el=document.getElementById('yesterdayBar'); el.innerHTML='';
+  if(state.editDate!==todayKey) return;
+  const rec=getRec(yesterdayKey);
+  if(!rec) return;  // 記録なしは banner 側が案内するのでここは出さない
+
+  let line;
+  if(rec.noCare){
+    line='🚫 ノーケア（何もしなかった日）';
+  }else{
+    const parts=[];
+    SLOT_ORDER.forEach(k=>{
+      const ids=(rec.slots||{})[k];
+      if(ids&&ids.length) parts.push(`${SLOT_META[k].icon} ${ids.map(shortName).join('・')}`);
+    });
+    line=parts.join('　')||'—';
+  }
+  const d=document.createElement('div');
+  d.className='yday-bar';
+  d.innerHTML=`
+    <div class="yhead">
+      <span class="ytitle">📅 昨日（${fmtMD(yesterdayKey)}）のケア</span>
+      <span class="yshift">${shiftLabelOf(rec.shift)}</span>
+    </div>
+    <div class="yline">${line}</div>
+    <div class="yedit">タップで昨日の記録を確認・修正 ›</div>`;
+  d.onclick=()=>{ loadStateFor(yesterdayKey); renderAll(); window.scrollTo(0,0); };
+  el.appendChild(d);
+}
+
 function renderShifts(){
   document.getElementById('shiftLabel').textContent =
     state.editDate===todayKey ? '① 今日のシフト' : `① ${dayLabelOf(state.editDate)}のシフト`;
@@ -873,6 +928,9 @@ function renderRoutine(){
     return;
   }
 
+  // 「昨日も」マーク用：今日を見ているときだけ、昨日使った商品の集合
+  const yset = (state.editDate===todayKey) ? new Set(itemsOf(getRec(yesterdayKey))) : new Set();
+
   slotsFor(state.shift, prevWasNight()).forEach(slot=>{
     const meta=SLOT_META[slot.key];
     const h=document.createElement('div');
@@ -914,7 +972,8 @@ function renderRoutine(){
             <div class="step-name">${it.name}</div>
             ${note?`<div class="step-note">${note}</div>`:''}
             <span class="cat">${it.cat}${step.choice?' · どちらか一方':''}</span>
-          </div>`;
+          </div>
+          ${yset.has(it.id)?'<div class="ymark">昨日も</div>':''}`;
         li.onclick=()=>{
           if(checked){ state.checked.delete(uid); }
           else{
@@ -939,7 +998,8 @@ function renderRoutine(){
             ${note?`<div class="step-note">${note}</div>`:''}
             <div class="item-chips">${its.map(it=>{
               const on=state.checked.has(slot.key+':'+it.id);
-              return `<button class="ichip${on?' on':''}" data-uid="${slot.key+':'+it.id}">${shortName(it.id)}</button>`;
+              const y=yset.has(it.id)?' <span class="ydot">·昨日も</span>':'';
+              return `<button class="ichip${on?' on':''}" data-uid="${slot.key+':'+it.id}">${shortName(it.id)}${y}</button>`;
             }).join('')}</div>
             <span class="cat">${step.cats.join('・')}${step.choice?' · どちらか一方':''}</span>
           </div>`;
@@ -1294,6 +1354,7 @@ function applyBackup(data){
    =========================================================== */
 function renderAll(){
   renderBanner();
+  renderYesterdayBar();
   renderShifts();
   renderWarnings();
   renderNoCare();
