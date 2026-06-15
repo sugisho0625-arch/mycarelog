@@ -231,6 +231,43 @@
   .data-note{font-size:.78rem; color:var(--sub); margin:4px 0 10px;}
   .data-row{display:flex; gap:8px;}
 
+  /* 筋トレ */
+  .wk-part{font-size:.74rem; color:var(--sub); font-weight:700; letter-spacing:.04em; margin:14px 0 6px;}
+  .wk-part:first-child{margin-top:4px;}
+  .wk-ex{
+    border:1px solid var(--line); border-radius:12px; background:#fff; margin-bottom:8px; overflow:hidden;
+  }
+  .wk-ex.on{border-color:#bfe6d2; background:#f1faf5;}
+  .wk-head{display:flex; align-items:center; gap:11px; padding:11px 12px; cursor:pointer;}
+  .wk-name{flex:1; font-size:.93rem; font-weight:600;}
+  .wk-ex.on .wk-name{color:var(--ink);}
+  .wk-set-summary{flex:0 0 auto; font-size:.78rem; color:var(--done); font-weight:700;}
+  .wk-controls{padding:0 12px 12px; display:none;}
+  .wk-ex.on .wk-controls{display:block;}
+  .wk-ctl-row{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 0;}
+  .wk-ctl-row .clbl{font-size:.82rem; color:var(--sub);}
+  .stepper{display:flex; align-items:center; gap:0;}
+  .stepper button{
+    width:34px; height:34px; border:1px solid #cdd6df; background:#fff; color:var(--accent);
+    font-size:1.2rem; font-weight:700; cursor:pointer; line-height:1;
+  }
+  .stepper button:first-child{border-radius:8px 0 0 8px;}
+  .stepper button:last-child{border-radius:0 8px 8px 0;}
+  .stepper .val{
+    min-width:52px; text-align:center; font-size:.95rem; font-weight:700;
+    border-top:1px solid #cdd6df; border-bottom:1px solid #cdd6df; padding:7px 4px; background:#fff;
+  }
+  .stepper .unit{font-size:.74rem; color:var(--sub); margin-left:6px;}
+  .wk-memo{width:100%; padding:9px 10px; border:1px solid #cdd6df; border-radius:8px; font-size:.9rem; margin-top:10px; background:#fff; color:var(--ink);}
+  .wk-memo-lbl{font-size:.74rem; color:var(--sub); font-weight:600; margin:14px 0 3px;}
+  .wk-save{
+    background:var(--accent); color:#fff; border:none; width:100%;
+    padding:13px; border-radius:11px; font-size:.95rem; font-weight:700; cursor:pointer; margin-top:14px;
+  }
+  .wk-save.dirty{background:#d97b29;}
+  .wk-save.saved{background:#8fa6ba;}
+  .wk-editlink{background:none;border:none;color:var(--accent);font-size:.8rem;font-weight:600;cursor:pointer;margin-top:12px;padding:4px 2px;}
+
   /* 振り返り */
   .insight-hero{
     display:flex; gap:10px; margin:4px 0 14px;
@@ -283,8 +320,14 @@
   <!-- 保存 -->
   <button class="save" id="saveBtn">記録を保存</button>
 
-  <!-- ③ 振り返り -->
+  <!-- 💪 筋トレ記録（スキンケアとは独立・単独で保存） -->
   <div class="card" style="margin-top:18px;">
+    <button class="hist-toggle" id="workoutToggle">▸ 💪 筋トレを記録</button>
+    <div class="hist-list" id="workoutPanel" style="display:none;"></div>
+  </div>
+
+  <!-- ③ 振り返り -->
+  <div class="card">
     <button class="hist-toggle" id="insightToggle">▸ 振り返り（記録の成果）</button>
     <div class="hist-list" id="insightPanel" style="display:none;"></div>
   </div>
@@ -322,7 +365,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.11 — 昨日の見える化は各項目の「昨日も」マークに一本化（上部バーは廃止）。
+    叩き台 v0.12 — 筋トレ記録を追加（種目×回数/秒×セット・押す/引く/体幹で分類・独立保存）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -358,6 +401,23 @@ const DEFAULT_ITEMS = [
   {id:'cream',      name:'スキンエンパワリングクリーム', cat:CAT.cream,      note:'毎晩・美顔器併用OK'},
   {id:'device',     name:'STELLA BEAUTE 美顔器',      cat:CAT.device,     note:'数日に1回・レチノールと同夜NG'},
   {id:'scalp',      name:'STELLA BEAUTE 美顔器（頭皮）', cat:CAT.scalp,     note:'頭皮・毎日OK・1日30分以内・レチノール併用OK'},
+];
+
+/* ===========================================================
+   筋トレ（セルフケア記録への拡張・spec将来機能）
+   区分は記事45の4分類（押す/引く/体幹/脚）。脚はランニングが補うため種目なし。
+   unit: '回' or '秒'。重量(kg)は今は持たないが record側に拡張余地を残す。
+   =========================================================== */
+const WK_PARTS = ['押す','引く','体幹','脚'];
+const DEFAULT_EXERCISES = [
+  {id:'pushup_narrow', name:'腕立て（ナロー・バランスボード）', part:'押す', unit:'回', defAmount:20, defSets:3},
+  {id:'pushup_wide',   name:'腕立て（ワイド）',               part:'押す', unit:'回', defAmount:40, defSets:3},
+  {id:'ab_roller',     name:'腹筋ローラー',                   part:'体幹', unit:'回', defAmount:17, defSets:3},
+  {id:'situp_twist',   name:'腹筋（ツイスト込み）',            part:'体幹', unit:'回', defAmount:20, defSets:3},
+  {id:'twist_legraise',name:'ツイストレッグレイズ',           part:'体幹', unit:'回', defAmount:10, defSets:3},
+  {id:'side_plank',    name:'サイドプランク（左右）',          part:'体幹', unit:'秒', defAmount:80, defSets:3},
+  {id:'inverted_row',  name:'斜め懸垂',                       part:'引く', unit:'回', defAmount:5,  defSets:3},
+  {id:'back_ext',      name:'背筋（スーパーマン・5秒キープ）',  part:'引く', unit:'回', defAmount:10, defSets:3},
 ];
 
 const SHIFTS = [
@@ -467,6 +527,8 @@ const LS_LOG = 'mcl_log_v3';
 const LS_SHIFT = 'mcl_shift_today';
 const LS_BOTTLES = 'mcl_bottles_v1';
 const LS_ITEMS = 'mcl_items_v1';
+const LS_EXERCISES = 'mcl_exercises_v1';
+const LS_WORKOUT = 'mcl_workout_v1';
 
 function pad(n){ return String(n).padStart(2,'0'); }
 function dateKeyOf(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
@@ -513,6 +575,37 @@ function shortName(id){
   return it ? it.name.replace(/（.*?）/g,'') : '(不明なアイテム)';
 }
 function newItemId(){ return 'u'+Date.now().toString(36)+Math.floor(Math.random()*100); }
+
+/* ===========================================================
+   筋トレ：種目マスタ＆記録
+   workout record = {date, entries:[{exId, sets, amount, weight?}], memo}
+   =========================================================== */
+(function ensureExercises(){
+  let a=null;
+  try{ a=JSON.parse(localStorage.getItem(LS_EXERCISES)); }catch(e){}
+  if(!Array.isArray(a)||!a.length){
+    localStorage.setItem(LS_EXERCISES, JSON.stringify(DEFAULT_EXERCISES));
+    return;
+  }
+  let changed=false;
+  DEFAULT_EXERCISES.forEach(def=>{ if(!a.some(e=>e.id===def.id)){ a.push(def); changed=true; } });
+  if(changed) localStorage.setItem(LS_EXERCISES, JSON.stringify(a));
+})();
+function allExercises(){ try{return JSON.parse(localStorage.getItem(LS_EXERCISES))||[];}catch(e){return [];} }
+function saveExercises(arr){ localStorage.setItem(LS_EXERCISES, JSON.stringify(arr)); }
+function activeExercises(){ return allExercises().filter(e=>!e.archived); }
+function exById(id){ return allExercises().find(e=>e.id===id)||null; }
+function newExId(){ return 'w'+Date.now().toString(36)+Math.floor(Math.random()*100); }
+
+function loadWorkoutLog(){ try{return JSON.parse(localStorage.getItem(LS_WORKOUT))||[];}catch(e){return [];} }
+function saveWorkoutLog(log){ localStorage.setItem(LS_WORKOUT, JSON.stringify(log)); }
+function getWorkout(date){ return loadWorkoutLog().find(r=>r.date===date)||null; }
+function upsertWorkout(rec){
+  const log=loadWorkoutLog();
+  const i=log.findIndex(r=>r.date===rec.date);
+  if(i>=0) log[i]=rec; else log.push(rec);
+  saveWorkoutLog(log);
+}
 
 /* ===========================================================
    旧形式からの引き継ぎ
@@ -990,37 +1083,43 @@ function shiftLabelOf(id){
 
 function renderHistory(){
   const el=document.getElementById('histList');
-  const log=loadLog().slice().sort((a,b)=>b.date.localeCompare(a.date));
-  if(!log.length){ el.innerHTML='<div class="empty">まだ記録がありません。</div>'; return; }
+  const sLog=loadLog(), wLog=loadWorkoutLog();
+  const dates=[...new Set([...sLog.map(r=>r.date), ...wLog.map(r=>r.date)])].sort((a,b)=>b.localeCompare(a));
+  if(!dates.length){ el.innerHTML='<div class="empty">まだ記録がありません。</div>'; return; }
   el.innerHTML='';
   const order=['kitaku','m','kishou','shukkin','n'];
-  log.forEach(r=>{
+  dates.forEach(date=>{
+    const r=sLog.find(x=>x.date===date);
+    const w=wLog.find(x=>x.date===date);
     const div=document.createElement('div'); div.className='hist-item';
-    let body;
-    if(r.noCare){
-      body='🚫 ノーケア（何もしなかった日）';
-    }else{
-      const prevN=(()=>{ const p=loadLog().find(x=>x.date===dayBefore(r.date)); return !!(p&&p.shift==='night'); })();
-      const defined=slotsFor(r.shift, prevN).map(s=>s.key);
-      const lines=[];
-      order.forEach(k=>{
-        const ids=(r.slots||{})[k]||[];
-        if(ids.length || defined.includes(k)){
-          const meta=SLOT_META[k];
-          lines.push(`${meta.icon} ${ids.length ? ids.map(shortName).join('、') : '<span style="color:var(--sub)">—（ケアなし）</span>'}`);
-        }
-      });
-      body=lines.join('<br>')||'—';
+    const lines=[];
+    if(r){
+      if(r.noCare){
+        lines.push('🚫 ノーケア（何もしなかった日）');
+      }else{
+        const prevN=(()=>{ const p=sLog.find(x=>x.date===dayBefore(r.date)); return !!(p&&p.shift==='night'); })();
+        const defined=slotsFor(r.shift, prevN).map(s=>s.key);
+        order.forEach(k=>{
+          const ids=(r.slots||{})[k]||[];
+          if(ids.length || defined.includes(k)){
+            const meta=SLOT_META[k];
+            lines.push(`${meta.icon} ${ids.length ? ids.map(shortName).join('、') : '<span style="color:var(--sub)">—（ケアなし）</span>'}`);
+          }
+        });
+      }
     }
+    const wsum=workoutSummary(w);
+    if(wsum) lines.push(`💪 ${wsum.join('、')}${w.memo?`<span style="color:var(--sub)">（${w.memo}）</span>`:''}`);
+    const tag = r ? shiftLabelOf(r.shift) : '💪 筋トレ';
     div.innerHTML=`
       <div class="hist-head">
-        <span><b>${r.date}</b> <span class="sh">${shiftLabelOf(r.shift)}</span></span>
+        <span><b>${date}</b> <span class="sh">${tag}</span></span>
         <span>
-          <button class="hist-del" data-e="${r.date}" style="color:var(--accent);">編集</button>
-          <button class="hist-del" data-d="${r.date}">削除</button>
+          <button class="hist-del" data-e="${date}" style="color:var(--accent);">編集</button>
+          <button class="hist-del" data-d="${date}">削除</button>
         </span>
       </div>
-      <div class="hist-items">${body}</div>`;
+      <div class="hist-items">${lines.join('<br>')||'—'}</div>`;
     el.appendChild(div);
   });
   el.querySelectorAll('[data-e]').forEach(btn=>{
@@ -1033,8 +1132,10 @@ function renderHistory(){
   el.querySelectorAll('[data-d]').forEach(btn=>{
     btn.onclick=()=>{
       const d=btn.getAttribute('data-d');
+      if(!confirm(d+' の記録（スキンケア・筋トレ）を削除しますか？')) return;
       saveLog(loadLog().filter(r=>r.date!==d));
-      if(d===state.editDate) loadStateFor(state.editDate);
+      saveWorkoutLog(loadWorkoutLog().filter(r=>r.date!==d));
+      if(d===state.editDate){ loadStateFor(state.editDate); syncWorkout(state.editDate); }
       renderAll();
     };
   });
@@ -1270,12 +1371,241 @@ function renderInsightsIfOpen(){
 }
 
 /* ===========================================================
+   筋トレ記録（スキンケアとは独立・editDate に追従）
+   =========================================================== */
+let wstate = { date:null, picked:{}, memo:'', dirty:false, editing:false };
+
+function syncWorkout(date){
+  wstate.date=date; wstate.picked={}; wstate.memo=''; wstate.dirty=false;
+  const rec=getWorkout(date);
+  if(rec){
+    (rec.entries||[]).forEach(e=>{ wstate.picked[e.exId]={sets:e.sets, amount:e.amount, weight:e.weight}; });
+    wstate.memo=rec.memo||'';
+  }
+}
+
+function workoutSummary(rec){
+  if(!rec || !(rec.entries||[]).length) return null;
+  return rec.entries.map(e=>{
+    const ex=exById(e.exId); const nm=ex?ex.name.replace(/（.*?）/g,''):'種目';
+    const unit=ex?ex.unit:'回';
+    return `${nm} ${e.amount}${unit}×${e.sets}`;
+  });
+}
+
+function renderWorkout(){
+  const el=document.getElementById('workoutPanel');
+  if(wstate.date!==state.editDate) syncWorkout(state.editDate);
+  el.innerHTML='';
+
+  if(wstate.editing){ el.appendChild(buildExerciseEditor()); return; }
+
+  const dayWord = state.editDate===todayKey ? '今日' : dayLabelOf(state.editDate);
+  const intro=document.createElement('div');
+  intro.className='data-note';
+  intro.textContent=`${dayWord}やった種目をタップ → 回数・セットを記録（スキンケアとは別に保存）。`;
+  el.appendChild(intro);
+
+  const exs=activeExercises();
+  WK_PARTS.forEach(part=>{
+    const inPart=exs.filter(e=>e.part===part);
+    if(!inPart.length) return;
+    const h=document.createElement('div'); h.className='wk-part'; h.textContent=part;
+    el.appendChild(h);
+    inPart.forEach(ex=>el.appendChild(buildExerciseRow(ex)));
+  });
+
+  // 区分に当てはまらない種目（任意追加分）
+  const others=exs.filter(e=>!WK_PARTS.includes(e.part));
+  if(others.length){
+    const h=document.createElement('div'); h.className='wk-part'; h.textContent='その他';
+    el.appendChild(h);
+    others.forEach(ex=>el.appendChild(buildExerciseRow(ex)));
+  }
+
+  // メモ
+  const ml=document.createElement('div'); ml.className='wk-memo-lbl'; ml.textContent='メモ（任意）';
+  el.appendChild(ml);
+  const memo=document.createElement('input');
+  memo.className='wk-memo'; memo.type='text'; memo.value=wstate.memo;
+  memo.placeholder='例：膝の調子よし／時間がなく半分';
+  memo.oninput=()=>{ wstate.memo=memo.value; wstate.dirty=true; updateWorkoutSaveBtn(); };
+  el.appendChild(memo);
+
+  // 保存
+  const save=document.createElement('button');
+  save.className='wk-save'; save.id='wkSaveBtn';
+  save.onclick=saveWorkout;
+  el.appendChild(save);
+  updateWorkoutSaveBtn();
+
+  const edit=document.createElement('button');
+  edit.className='wk-editlink';
+  edit.textContent='＋ 種目を追加・編集';
+  edit.onclick=()=>{ wstate.editing=true; renderWorkout(); };
+  el.appendChild(edit);
+}
+
+function buildExerciseRow(ex){
+  const picked=wstate.picked[ex.id];
+  const on=!!picked;
+  const sets=picked?picked.sets:ex.defSets;
+  const amount=picked?picked.amount:ex.defAmount;
+  const row=document.createElement('div');
+  row.className='wk-ex'+(on?' on':'');
+  const step=ex.unit==='秒'?5:1;
+  row.innerHTML=`
+    <div class="wk-head">
+      <div class="box">${on?'✓':''}</div>
+      <div class="wk-name">${ex.name}</div>
+      ${on?`<div class="wk-set-summary">${amount}${ex.unit}×${sets}</div>`:''}
+    </div>
+    <div class="wk-controls">
+      <div class="wk-ctl-row">
+        <span class="clbl">1セットあたり</span>
+        <div class="stepper" data-f="amount">
+          <button data-d="-1">−</button><span class="val">${amount}</span><button data-d="1">＋</button>
+          <span class="unit">${ex.unit}</span>
+        </div>
+      </div>
+      <div class="wk-ctl-row">
+        <span class="clbl">セット数</span>
+        <div class="stepper" data-f="sets">
+          <button data-d="-1">−</button><span class="val">${sets}</span><button data-d="1">＋</button>
+          <span class="unit">セット</span>
+        </div>
+      </div>
+    </div>`;
+  // ヘッダタップ＝ON/OFF
+  row.querySelector('.wk-head').onclick=()=>{
+    if(wstate.picked[ex.id]) delete wstate.picked[ex.id];
+    else wstate.picked[ex.id]={sets:ex.defSets, amount:ex.defAmount};
+    wstate.dirty=true;
+    renderWorkout();
+  };
+  // ステッパー
+  row.querySelectorAll('.stepper').forEach(st=>{
+    const field=st.getAttribute('data-f');
+    st.querySelectorAll('button').forEach(b=>{
+      b.onclick=(ev)=>{
+        ev.stopPropagation();
+        if(!wstate.picked[ex.id]) return;
+        const d=Number(b.getAttribute('data-d'))*(field==='amount'?step:1);
+        const cur=wstate.picked[ex.id];
+        cur[field]=Math.max(field==='sets'?1:0, (cur[field]||0)+d);
+        wstate.dirty=true;
+        renderWorkout();
+      };
+    });
+  });
+  return row;
+}
+
+function updateWorkoutSaveBtn(){
+  const b=document.getElementById('wkSaveBtn'); if(!b) return;
+  b.classList.remove('dirty','saved');
+  const count=Object.keys(wstate.picked).length;
+  if(wstate.dirty){ b.classList.add('dirty'); b.textContent='💪 筋トレを保存（未保存）'; }
+  else if(getWorkout(state.editDate)){ b.classList.add('saved'); b.textContent='✓ 保存済み'; }
+  else b.textContent=`💪 筋トレを保存${count?`（${count}種目）`:''}`;
+}
+
+function saveWorkout(){
+  const entries=Object.entries(wstate.picked).map(([exId,v])=>({exId, sets:v.sets, amount:v.amount, ...(v.weight!=null?{weight:v.weight}:{})}));
+  if(!entries.length && !wstate.memo){
+    // 空保存＝その日の筋トレ記録を消す
+    saveWorkoutLog(loadWorkoutLog().filter(r=>r.date!==state.editDate));
+  }else{
+    upsertWorkout({date:state.editDate, entries, memo:wstate.memo});
+  }
+  wstate.dirty=false;
+  flashToast('💪 筋トレを保存しました');
+  updateWorkoutSaveBtn();
+  renderHistoryIfOpen();
+  renderInsightsIfOpen();
+}
+
+/* 種目の追加・編集 */
+let editingExId=null;
+function buildExerciseEditor(){
+  const wrap=document.createElement('div');
+  const back=document.createElement('button');
+  back.className='wk-editlink'; back.textContent='‹ 記録に戻る';
+  back.onclick=()=>{ wstate.editing=false; editingExId=null; renderWorkout(); };
+  wrap.appendChild(back);
+
+  const addBtn=document.createElement('button');
+  addBtn.className='add-item-btn'; addBtn.textContent='＋ 種目を追加';
+  addBtn.onclick=()=>{ editingExId='__new__'; rebuildEditor(wrap); };
+  wrap.appendChild(addBtn);
+  if(editingExId==='__new__') wrap.appendChild(buildExForm(null));
+
+  activeExercises().forEach(ex=>{
+    if(editingExId===ex.id){ wrap.appendChild(buildExForm(ex)); return; }
+    const row=document.createElement('div'); row.className='item-row';
+    row.innerHTML=`<div><div class="nm">${ex.name}</div><div class="meta">${ex.part}・${ex.defAmount}${ex.unit}×${ex.defSets}</div></div>
+      <div class="item-acts"><button class="edit" data-ed="${ex.id}">✏️</button><button data-ar="${ex.id}">削除</button></div>`;
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll('[data-ed]').forEach(b=>b.onclick=()=>{ editingExId=b.getAttribute('data-ed'); rebuildEditor(wrap); });
+  wrap.querySelectorAll('[data-ar]').forEach(b=>b.onclick=()=>{
+    const id=b.getAttribute('data-ar');
+    if(!confirm('この種目を一覧から外しますか？（過去の記録は残ります）')) return;
+    const arr=allExercises(); const e=arr.find(x=>x.id===id); if(e) e.archived=true;
+    saveExercises(arr); rebuildEditor(wrap);
+  });
+  return wrap;
+}
+function rebuildEditor(wrap){
+  const fresh=buildExerciseEditor();
+  wrap.replaceWith(fresh);
+}
+function buildExForm(ex){
+  const f=document.createElement('div'); f.className='item-form';
+  f.innerHTML=`
+    <label>種目名 *</label>
+    <input type="text" id="exName" value="${ex?ex.name.replace(/"/g,'&quot;'):''}" placeholder="例：ディップス">
+    <label>区分</label>
+    <select id="exPart">${WK_PARTS.map(p=>`<option${ex&&ex.part===p?' selected':''}>${p}</option>`).join('')}</select>
+    <label>単位</label>
+    <select id="exUnit"><option${ex&&ex.unit==='回'?' selected':''}>回</option><option${ex&&ex.unit==='秒'?' selected':''}>秒</option></select>
+    <label>標準の数（1セットあたり）</label>
+    <input type="number" id="exAmount" value="${ex?ex.defAmount:10}" min="1">
+    <label>標準のセット数</label>
+    <input type="number" id="exSets" value="${ex?ex.defSets:3}" min="1">
+    <div class="row">
+      <button class="bbtn primary" id="exSave">${ex?'保存':'追加'}</button>
+      <button class="bbtn" id="exCancel">キャンセル</button>
+    </div>`;
+  f.querySelector('#exCancel').onclick=()=>{ editingExId=null; wstate.editing=true; renderWorkout(); };
+  f.querySelector('#exSave').onclick=()=>{
+    const name=f.querySelector('#exName').value.trim();
+    if(!name){ alert('種目名を入れてください。'); return; }
+    const data={part:f.querySelector('#exPart').value, unit:f.querySelector('#exUnit').value,
+      defAmount:Math.max(1,Number(f.querySelector('#exAmount').value)||10),
+      defSets:Math.max(1,Number(f.querySelector('#exSets').value)||3)};
+    const arr=allExercises();
+    if(ex){ Object.assign(arr.find(x=>x.id===ex.id), {name, ...data}); }
+    else arr.push({id:newExId(), name, ...data});
+    saveExercises(arr);
+    editingExId=null;
+    flashToast('種目を保存しました');
+    renderWorkout();
+  };
+  return f;
+}
+function renderWorkoutIfOpen(){
+  if(document.getElementById('workoutPanel').style.display!=='none') renderWorkout();
+}
+
+/* ===========================================================
    バックアップ（書き出し／読み込み）
    =========================================================== */
 function buildBackup(){
   return {
-    app:'MyCareLog', format:7, exported:todayKey,
+    app:'MyCareLog', format:8, exported:todayKey,
     log:loadLog(), bottles:loadBottles(), items:allItems(),
+    exercises:allExercises(), workout:loadWorkoutLog(),
     shiftToday:localStorage.getItem(LS_SHIFT)||null,
   };
 }
@@ -1298,6 +1628,8 @@ function applyBackup(data){
   saveLog(data.log);
   if(data.bottles) saveBottles(data.bottles);
   if(Array.isArray(data.items)&&data.items.length) saveItems(data.items);
+  if(Array.isArray(data.exercises)&&data.exercises.length) saveExercises(data.exercises);
+  if(Array.isArray(data.workout)) saveWorkoutLog(data.workout);
   if(data.shiftToday) localStorage.setItem(LS_SHIFT, data.shiftToday);
   return true;
 }
@@ -1311,6 +1643,7 @@ function renderAll(){
   renderWarnings();
   renderNoCare();
   renderRoutine();
+  renderWorkoutIfOpen();
   renderHistoryIfOpen();
   renderBottlesIfOpen();
 }
@@ -1327,6 +1660,7 @@ function wireToggle(btnId, panelId, title, onOpen){
     if(!open && onOpen) onOpen();
   };
 }
+wireToggle('workoutToggle','workoutPanel','💪 筋トレを記録',renderWorkout);
 wireToggle('insightToggle','insightPanel','振り返り（記録の成果）',renderInsights);
 wireToggle('itemsToggle','itemsPanel','マイアイテム（登録・編集）',renderItems);
 wireToggle('bottleToggle','bottleList','ボトル管理（買い足しタイマー）',renderBottles);
