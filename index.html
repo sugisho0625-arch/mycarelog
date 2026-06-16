@@ -369,7 +369,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.14.4 — 夜勤明けの枠ラベルを中立化（起床後/就寝前(朝)→日中/帰宅後(朝)・睡眠前提を除去）。
+    叩き台 v0.15 — 夜勤初日に「日中」ケア枠を追加（前夜は通常睡眠＝日中に普通のスキンケア）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -510,10 +510,16 @@ function slotsFor(shift, prevNight){
       ];
     case 'night': {
       const s=[];
-      if(prevNight) s.push({key:'kitaku', steps:stepNightGuard(),
-        hint:'前日も夜勤の記録があるので、帰宅後（朝）の枠を表示しています。'});
+      if(prevNight){
+        // 中日：前夜の勤務後に帰宅→就寝、の守りケア
+        s.push({key:'kitaku', steps:stepNightGuard(),
+          hint:'前日も夜勤の記録があるので、帰宅後（朝）の枠を表示しています。'});
+      }else{
+        // 初日：前夜は普通に寝て朝起きている＝日中の通常スキンケア
+        s.push({key:'kishou', steps:stepWake(),
+          hint:'夜勤初日：日中は普通に起きているので通常の日中ケア。前日も夜勤として記録すると、代わりに「帰宅後（朝）」の守りケア枠になります。'});
+      }
       s.push({key:'shukkin', steps:stepShukkin()});
-      if(!prevNight) s[s.length-1].hint='連続夜勤の中日は、前日を夜勤として記録すると「帰宅後（朝）」の枠も表示されます。';
       return s;
     }
     case 'after':
