@@ -219,13 +219,15 @@
   }
   .item-form .row{display:flex; gap:8px; margin-top:11px;}
 
-  /* 「昨日も」マーク（今日の各項目の右側） */
-  .ymark{
-    flex:0 0 auto; align-self:center; font-size:.7rem; font-weight:700;
-    color:#7a6320; background:#fdf3dc; border:1px solid #ecd49a;
+  /* 頻度バッジ（連続使用を避けたい項目だけ・前回○日前） */
+  .freq-badge{
+    flex:0 0 auto; align-self:center; font-size:.7rem; font-weight:600;
+    color:var(--sub); background:#eef2f6; border:1px solid var(--line);
     border-radius:11px; padding:2px 8px; white-space:nowrap;
   }
-  .ichip .ydot{color:#c79a3a; font-weight:700;}
+  .freq-badge.hot{ color:#8a3d18; background:#fde3d3; border-color:#f0ad84; font-weight:700; }
+  .chip-freq{ font-size:.66rem; color:var(--sub); font-weight:600; margin-left:4px; }
+  .chip-freq.hot{ color:#b4541f; }
 
   /* データ管理 */
   .data-note{font-size:.78rem; color:var(--sub); margin:4px 0 10px;}
@@ -365,7 +367,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.12 — 筋トレ記録を追加（種目×回数/秒×セット・押す/引く/体幹で分類・独立保存）。
+    叩き台 v0.13 — 「昨日も」を頻度注意の6項目だけの「前回○日前」バッジに刷新（連続NG4項目は昨日使用でハイライト）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -402,6 +404,11 @@ const DEFAULT_ITEMS = [
   {id:'device',     name:'STELLA BEAUTE 美顔器',      cat:CAT.device,     note:'数日に1回・レチノールと同夜NG'},
   {id:'scalp',      name:'STELLA BEAUTE 美顔器（頭皮）', cat:CAT.scalp,     note:'頭皮・毎日OK・1日30分以内・レチノール併用OK'},
 ];
+
+/* 連続使用を避けたい＝「前回○日前」を出す項目（spec §5）
+   FREQ_HIGHLIGHT：昨日使ったらオレンジで警告（今日は控える）。PAO/通常洗顔は情報のみ。 */
+const FREQ_ITEMS = ['retinol','device','pao','washFancl','cleanseOil','washBiore'];
+const FREQ_HIGHLIGHT = ['retinol','device','washFancl','cleanseOil'];
 
 /* ===========================================================
    筋トレ（セルフケア記録への拡張・spec将来機能）
@@ -546,6 +553,23 @@ function upsertRec(rec){
   const i=log.findIndex(r=>r.date===rec.date);
   if(i>=0) log[i]=rec; else log.push(rec);
   saveLog(log);
+}
+
+/* 頻度バッジ用：editDateより前で、そのアイテムを最後に使った日からの経過日数（枠は問わない＝日単位） */
+function daysSinceLastUse(itemId, beforeDate){
+  const recs=loadLog().filter(r=>!r.noCare && r.date<beforeDate
+    && Object.values(r.slots||{}).some(ids=>ids.includes(itemId)));
+  if(!recs.length) return null;
+  const last=recs.map(r=>r.date).sort().pop();
+  return Math.round((new Date(beforeDate+'T00:00:00')-new Date(last+'T00:00:00'))/86400000);
+}
+function freqText(d){ return d===null?'前回なし':(d===1?'前回 昨日':`前回 ${d}日前`); }
+function freqBadgeHTML(itemId, forChip){
+  if(!FREQ_ITEMS.includes(itemId)) return '';
+  const d=daysSinceLastUse(itemId, state.editDate);
+  const hot = FREQ_HIGHLIGHT.includes(itemId) && d!==null && d<=1;
+  if(forChip) return ` <span class="chip-freq${hot?' hot':''}">${freqText(d)}</span>`;
+  return `<div class="freq-badge${hot?' hot':''}">${freqText(d)}</div>`;
 }
 
 /* ===========================================================
@@ -974,9 +998,6 @@ function renderRoutine(){
     return;
   }
 
-  // 「昨日も」マーク用：今日を見ているときだけ、昨日使った商品の集合
-  const yset = (state.editDate===todayKey) ? new Set(itemsOf(getRec(yesterdayKey))) : new Set();
-
   slotsFor(state.shift, prevWasNight()).forEach(slot=>{
     const meta=SLOT_META[slot.key];
     const h=document.createElement('div');
@@ -1019,7 +1040,7 @@ function renderRoutine(){
             ${note?`<div class="step-note">${note}</div>`:''}
             <span class="cat">${it.cat}${step.choice?' · どちらか一方':''}</span>
           </div>
-          ${yset.has(it.id)?'<div class="ymark">昨日も</div>':''}`;
+          ${freqBadgeHTML(it.id, false)}`;
         li.onclick=()=>{
           if(checked){ state.checked.delete(uid); }
           else{
@@ -1044,7 +1065,7 @@ function renderRoutine(){
             ${note?`<div class="step-note">${note}</div>`:''}
             <div class="item-chips">${its.map(it=>{
               const on=state.checked.has(slot.key+':'+it.id);
-              const y=yset.has(it.id)?' <span class="ydot">·昨日も</span>':'';
+              const y=freqBadgeHTML(it.id, true);
               return `<button class="ichip${on?' on':''}" data-uid="${slot.key+':'+it.id}">${shortName(it.id)}${y}</button>`;
             }).join('')}</div>
             <span class="cat">${step.cats.join('・')}${step.choice?' · どちらか一方':''}</span>
