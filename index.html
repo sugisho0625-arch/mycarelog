@@ -163,10 +163,11 @@
   }
   #toast.show{opacity:1;}
 
-  /* 折りたたみセクション共通 */
+  /* 折りたたみセクション共通（行のどこを押しても開く＝幅いっぱい＋大きめタップ領域） */
   .hist-toggle{
     background:none; border:none; color:var(--accent); font-size:.86rem;
-    font-weight:600; cursor:pointer; padding:6px 2px; display:flex; align-items:center; gap:5px;
+    font-weight:600; cursor:pointer; padding:12px 4px; display:flex; align-items:center; gap:5px;
+    width:100%; text-align:left; margin:-6px 0;
   }
   .hist-list{margin-top:6px;}
   .hist-item{
@@ -368,7 +369,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.13.1 — 筋トレのチェック✓表示を修正・斜め懸垂を順手/逆手の2種に。
+    叩き台 v0.14.4 — 夜勤明けの枠ラベルを中立化（起床後/就寝前(朝)→日中/帰宅後(朝)・睡眠前提を除去）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -382,7 +383,7 @@
    =========================================================== */
 const CAT = {
   cleanseOil:'クレンジングオイル', washNormal:'洗顔(通常)', washClay:'洗顔(クレイ)',
-  toner:'化粧水', serumGuard:'守りの美容液', retinol:'レチノール類',
+  toner:'化粧水', serumGuard:'守りの美容液', vitC:'ビタミンC', retinol:'レチノール類',
   cream:'クリーム', allinone:'オールインワン', uv:'日焼け止め',
   device:'美顔器', scalp:'頭皮ケアデバイス', pao:'表情筋トレ'
 };
@@ -400,6 +401,7 @@ const DEFAULT_ITEMS = [
   {id:'washBiore',  name:'メンズビオレ ザフェイス',     cat:CAT.washNormal, note:'通常洗顔'},
   {id:'washFancl',  name:'FANCL 泥ジェル洗顔',        cat:CAT.washClay,   note:'軽く濡らした肌・週3-4回'},
   {id:'serum',      name:'アルティミューン セラム',     cat:CAT.serumGuard, note:'守り・毎晩必須'},
+  {id:'obagiC20',   name:'オバジ C20 セラム',          cat:CAT.vitC,       note:'朝向き・少量から・夜レチノールとは時間帯を分ける'},
   {id:'retinol',    name:'ANUA レチノール0.3',        cat:CAT.retinol,    note:'攻め・週2〜3回・翌朝UV必須'},
   {id:'cream',      name:'スキンエンパワリングクリーム', cat:CAT.cream,      note:'毎晩・美顔器併用OK'},
   {id:'device',     name:'STELLA BEAUTE 美顔器',      cat:CAT.device,     note:'数日に1回・レチノールと同夜NG'},
@@ -444,6 +446,7 @@ const SHIFTS = [
 const stepMorningWork = () => [
   {cats:[CAT.pao]},
   {cats:[CAT.toner]},
+  {cats:[CAT.vitC], note:'朝向き・少量から（夜レチノールとは分ける）'},
   {cats:[CAT.allinone]},
   {cats:[CAT.uv], note:'外出時・レチノール翌朝は必須'},
   {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
@@ -468,6 +471,7 @@ const stepNightGuard = () => [
   {cats:[CAT.cleanseOil], note:'肌の状態次第で'},
   {cats:[CAT.washNormal, CAT.washClay], label:'洗顔', note:'通常洗顔のみ（泥ジェルのパック/マッサージNG）'},
   {cats:[CAT.toner]},
+  {cats:[CAT.vitC], note:'夜勤明けの日中ケア向き・使うなら少量から'},
   {cats:[CAT.serumGuard]},
   {cats:[CAT.cream]},
   {cats:[CAT.scalp], note:'頭皮・毎日OK'},
@@ -475,12 +479,14 @@ const stepNightGuard = () => [
 const stepMinimal = () => [
   {cats:[CAT.pao], note:'余裕があれば'},
   {cats:[CAT.toner]},
+  {cats:[CAT.vitC], note:'朝向き・少量から（夜レチノールとは分ける）'},
   {cats:[CAT.allinone]},
   {cats:[CAT.uv], note:'外出するなら'},
   {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
 ];
 const stepWake = () => [
   {cats:[CAT.toner], note:'任意・スキップOK'},
+  {cats:[CAT.vitC], note:'朝向き・少量から（夜レチノールとは分ける）'},
   {cats:[CAT.allinone]},
   {cats:[CAT.uv], note:'外出するなら'},
   {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
@@ -489,8 +495,8 @@ const stepWake = () => [
 const SLOT_META = {
   m:       {icon:'🌅', label:'朝 / 出勤前'},
   n:       {icon:'🌙', label:'夜 / 就寝前'},
-  kitaku:  {icon:'🌅', label:'帰宅後・就寝前（朝）'},
-  kishou:  {icon:'☀️', label:'起床後（昼）'},
+  kitaku:  {icon:'🌅', label:'帰宅後（朝）'},
+  kishou:  {icon:'☀️', label:'日中'},
   shukkin: {icon:'🌆', label:'出勤前（夕方〜夜）'},
 };
 
@@ -841,6 +847,10 @@ function computeWarnings(){
   }
   if(state.shift==='after'){
     out.push({lv:'note', html:`<b>夜勤明け</b>：帰宅後（朝）は攻めスキップ（守りのみ）。夜の就寝前はフルでOK。`});
+  }
+  // 夜勤明け／夜勤中日の明け（連続夜勤の帰宅後）＝post-night-shiftの疲れた肌にはビタミンC控えめ
+  if(activeItems().some(it=>it.cat===CAT.vitC) && (state.shift==='after' || (state.shift==='night' && prevWasNight()))){
+    out.push({lv:'note', html:`<b>ビタミンC</b>：夜勤明け（中日の明け含む）の疲れた肌は刺激を受けやすい。使うなら<b>少量・控えめ</b>に（ヒリつきを感じたらスキップ）。`});
   }
   const ret7 = catCount(recordsInWindow(state.editDate,7), CAT.retinol);
   if(ret7>=3){
