@@ -240,6 +240,7 @@
     border:1px solid var(--line); border-radius:12px; background:#fff; margin-bottom:8px; overflow:hidden;
   }
   .wk-ex.on{border-color:#bfe6d2; background:#f1faf5;}
+  .wk-ex.on .box{background:var(--done); border-color:var(--done);}
   .wk-head{display:flex; align-items:center; gap:11px; padding:11px 12px; cursor:pointer;}
   .wk-name{flex:1; font-size:.93rem; font-weight:600;}
   .wk-ex.on .wk-name{color:var(--ink);}
@@ -367,7 +368,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.13 — 「昨日も」を頻度注意の6項目だけの「前回○日前」バッジに刷新（連続NG4項目は昨日使用でハイライト）。
+    叩き台 v0.13.1 — 筋トレのチェック✓表示を修正・斜め懸垂を順手/逆手の2種に。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -423,7 +424,8 @@ const DEFAULT_EXERCISES = [
   {id:'situp_twist',   name:'腹筋（ツイスト込み）',            part:'体幹', unit:'回', defAmount:20, defSets:3},
   {id:'twist_legraise',name:'ツイストレッグレイズ',           part:'体幹', unit:'回', defAmount:10, defSets:3},
   {id:'side_plank',    name:'サイドプランク（左右）',          part:'体幹', unit:'秒', defAmount:80, defSets:3},
-  {id:'inverted_row',  name:'斜め懸垂',                       part:'引く', unit:'回', defAmount:5,  defSets:3},
+  {id:'inverted_row',   name:'斜め懸垂（順手）',                part:'引く', unit:'回', defAmount:5,  defSets:3},
+  {id:'inverted_row_un',name:'斜め懸垂（逆手）',                part:'引く', unit:'回', defAmount:5,  defSets:3},
   {id:'back_ext',      name:'背筋（スーパーマン・5秒キープ）',  part:'引く', unit:'回', defAmount:10, defSets:3},
 ];
 
@@ -613,6 +615,9 @@ function newItemId(){ return 'u'+Date.now().toString(36)+Math.floor(Math.random(
   }
   let changed=false;
   DEFAULT_EXERCISES.forEach(def=>{ if(!a.some(e=>e.id===def.id)){ a.push(def); changed=true; } });
+  // 既存の「斜め懸垂」を「斜め懸垂（順手）」へ改名（逆手の追加に伴う・ユーザー編集名は触らない）
+  const ir=a.find(e=>e.id==='inverted_row');
+  if(ir && ir.name==='斜め懸垂'){ ir.name='斜め懸垂（順手）'; changed=true; }
   if(changed) localStorage.setItem(LS_EXERCISES, JSON.stringify(a));
 })();
 function allExercises(){ try{return JSON.parse(localStorage.getItem(LS_EXERCISES))||[];}catch(e){return [];} }
