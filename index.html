@@ -369,7 +369,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.15 — 夜勤初日に「日中」ケア枠を追加（前夜は通常睡眠＝日中に普通のスキンケア）。
+    叩き台 v0.15.1 — ビタミンCの文言を公式準拠に（朝中心・使った日はUV必須・夜と時間帯を分ける）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -401,7 +401,7 @@ const DEFAULT_ITEMS = [
   {id:'washBiore',  name:'メンズビオレ ザフェイス',     cat:CAT.washNormal, note:'通常洗顔'},
   {id:'washFancl',  name:'FANCL 泥ジェル洗顔',        cat:CAT.washClay,   note:'軽く濡らした肌・週3-4回'},
   {id:'serum',      name:'アルティミューン セラム',     cat:CAT.serumGuard, note:'守り・毎晩必須'},
-  {id:'obagiC20',   name:'オバジ C20 セラム',          cat:CAT.vitC,       note:'朝向き・少量から・夜レチノールとは時間帯を分ける'},
+  {id:'obagiC20',   name:'オバジ C20 セラム',          cat:CAT.vitC,       note:'公式は朝晩2回／本人は朝中心・少量から慣らす・使った日はUV必須・夜のレチ/美顔器とは時間帯を分ける'},
   {id:'retinol',    name:'ANUA レチノール0.3',        cat:CAT.retinol,    note:'攻め・週2〜3回・翌朝UV必須'},
   {id:'cream',      name:'スキンエンパワリングクリーム', cat:CAT.cream,      note:'毎晩・美顔器併用OK'},
   {id:'device',     name:'STELLA BEAUTE 美顔器',      cat:CAT.device,     note:'数日に1回・レチノールと同夜NG'},
@@ -446,7 +446,7 @@ const SHIFTS = [
 const stepMorningWork = () => [
   {cats:[CAT.pao]},
   {cats:[CAT.toner]},
-  {cats:[CAT.vitC], note:'朝向き・少量から（夜レチノールとは分ける）'},
+  {cats:[CAT.vitC], note:'朝中心・少量から慣らす／使った日はUV必須（夜のレチ・美顔器とは時間帯を分ける）'},
   {cats:[CAT.allinone]},
   {cats:[CAT.uv], note:'外出時・レチノール翌朝は必須'},
   {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
@@ -471,7 +471,7 @@ const stepNightGuard = () => [
   {cats:[CAT.cleanseOil], note:'肌の状態次第で'},
   {cats:[CAT.washNormal, CAT.washClay], label:'洗顔', note:'通常洗顔のみ（泥ジェルのパック/マッサージNG）'},
   {cats:[CAT.toner]},
-  {cats:[CAT.vitC], note:'夜勤明けの日中ケア向き・使うなら少量から'},
+  {cats:[CAT.vitC], note:'夜勤明けの日中ケア向き・少量から（外出時はUV必須）'},
   {cats:[CAT.serumGuard]},
   {cats:[CAT.cream]},
   {cats:[CAT.scalp], note:'頭皮・毎日OK'},
@@ -479,14 +479,14 @@ const stepNightGuard = () => [
 const stepMinimal = () => [
   {cats:[CAT.pao], note:'余裕があれば'},
   {cats:[CAT.toner]},
-  {cats:[CAT.vitC], note:'朝向き・少量から（夜レチノールとは分ける）'},
+  {cats:[CAT.vitC], note:'朝中心・少量から慣らす／使った日はUV必須（夜のレチ・美顔器とは時間帯を分ける）'},
   {cats:[CAT.allinone]},
   {cats:[CAT.uv], note:'外出するなら'},
   {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
 ];
 const stepWake = () => [
   {cats:[CAT.toner], note:'任意・スキップOK'},
-  {cats:[CAT.vitC], note:'朝向き・少量から（夜レチノールとは分ける）'},
+  {cats:[CAT.vitC], note:'朝中心・少量から慣らす／使った日はUV必須（夜のレチ・美顔器とは時間帯を分ける）'},
   {cats:[CAT.allinone]},
   {cats:[CAT.uv], note:'外出するなら'},
   {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
