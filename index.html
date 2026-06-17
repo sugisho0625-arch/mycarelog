@@ -369,7 +369,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.16 — ビタミンCを全枠に＋夜の就寝前はレチ/美顔器/Cの3者排他（同じ夜は1つ・時間帯を分ける）。
+    叩き台 v0.16.1 — 筋トレ「引く」の並び順を修正（斜め懸垂 順手→逆手→背筋）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -639,6 +639,19 @@ function saveExercises(arr){ localStorage.setItem(LS_EXERCISES, JSON.stringify(a
 function activeExercises(){ return allExercises().filter(e=>!e.archived); }
 function exById(id){ return allExercises().find(e=>e.id===id)||null; }
 function newExId(){ return 'w'+Date.now().toString(36)+Math.floor(Math.random()*100); }
+
+/* 既存ユーザー並べ替え：斜め懸垂（逆手）を（順手）の直後に（後から追加で末尾に入った分の是正） */
+(function migrateExOrder(){
+  const arr=allExercises();
+  const j=arr.findIndex(e=>e.id==='inverted_row_un');
+  const i=arr.findIndex(e=>e.id==='inverted_row');
+  if(i>=0 && j>=0 && j!==i+1){
+    const [un]=arr.splice(j,1);
+    const ni=arr.findIndex(e=>e.id==='inverted_row');
+    arr.splice(ni+1,0,un);
+    saveExercises(arr);
+  }
+})();
 
 function loadWorkoutLog(){ try{return JSON.parse(localStorage.getItem(LS_WORKOUT))||[];}catch(e){return [];} }
 function saveWorkoutLog(log){ localStorage.setItem(LS_WORKOUT, JSON.stringify(log)); }
