@@ -369,7 +369,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.15.1 — ビタミンCの文言を公式準拠に（朝中心・使った日はUV必須・夜と時間帯を分ける）。
+    叩き台 v0.16 — ビタミンCを全枠に＋夜の就寝前はレチ/美顔器/Cの3者排他（同じ夜は1つ・時間帯を分ける）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -454,6 +454,7 @@ const stepMorningWork = () => [
 const stepShukkin = () => [
   {cats:[CAT.pao]},
   {cats:[CAT.toner]},
+  {cats:[CAT.vitC], note:'出勤前も可・少量から（公式は朝晩2回／夜のレチ・美顔器とは分ける）'},
   {cats:[CAT.allinone]},
   {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
 ];
@@ -462,6 +463,7 @@ const stepNightFull = () => [
   {cats:[CAT.washNormal, CAT.washClay], label:'洗顔', note:'通常と泥ジェルは交互（泥ジェルは週3-4回）'},
   {cats:[CAT.toner]},
   {cats:[CAT.serumGuard]},
+  {cats:[CAT.vitC], choice:'attack', note:'夜に使うなら少量（レチ・美顔器とは重ねない）'},
   {cats:[CAT.retinol], choice:'attack'},
   {cats:[CAT.cream]},
   {cats:[CAT.device], choice:'attack'},
@@ -1037,7 +1039,7 @@ function renderRoutine(){
     if(attackSteps.length>=2){
       const hint=document.createElement('div');
       hint.className='choice-hint';
-      hint.textContent='※ レチノール と 美顔器 は同じ夜にNG。どちらか一方を選んでチェック。';
+      hint.textContent='※ レチノール／美顔器／ビタミンC は同じ夜に重ねない（使うならどれか一つ・他は別の時間帯に）。';
       root.appendChild(hint);
     }
 
