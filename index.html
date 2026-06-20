@@ -369,7 +369,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.16.1 — 筋トレ「引く」の並び順を修正（斜め懸垂 順手→逆手→背筋）。
+    叩き台 v0.16.2 — 筋トレの回数/セット初期値を「前回入力した値」に（毎回の微調整を減らす）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -661,6 +661,18 @@ function upsertWorkout(rec){
   const i=log.findIndex(r=>r.date===rec.date);
   if(i>=0) log[i]=rec; else log.push(rec);
   saveWorkoutLog(log);
+}
+/* 種目の初期値＝前回入力した値（editDateより前の最新記録）。なければ種目の標準値 */
+function exDefaultValue(exId){
+  const recs=loadWorkoutLog()
+    .filter(r=>r.date<state.editDate && (r.entries||[]).some(e=>e.exId===exId))
+    .sort((a,b)=>b.date.localeCompare(a.date));
+  if(recs.length){
+    const e=recs[0].entries.find(x=>x.exId===exId);
+    return {sets:e.sets, amount:e.amount};
+  }
+  const ex=exById(exId);
+  return {sets:ex?ex.defSets:3, amount:ex?ex.defAmount:10};
 }
 
 /* ===========================================================
@@ -1506,8 +1518,9 @@ function renderWorkout(){
 function buildExerciseRow(ex){
   const picked=wstate.picked[ex.id];
   const on=!!picked;
-  const sets=picked?picked.sets:ex.defSets;
-  const amount=picked?picked.amount:ex.defAmount;
+  const def=exDefaultValue(ex.id);  // 前回値（なければ標準値）
+  const sets=picked?picked.sets:def.sets;
+  const amount=picked?picked.amount:def.amount;
   const row=document.createElement('div');
   row.className='wk-ex'+(on?' on':'');
   const step=ex.unit==='秒'?5:1;
@@ -1536,7 +1549,7 @@ function buildExerciseRow(ex){
   // ヘッダタップ＝ON/OFF
   row.querySelector('.wk-head').onclick=()=>{
     if(wstate.picked[ex.id]) delete wstate.picked[ex.id];
-    else wstate.picked[ex.id]={sets:ex.defSets, amount:ex.defAmount};
+    else { const d=exDefaultValue(ex.id); wstate.picked[ex.id]={sets:d.sets, amount:d.amount}; }
     wstate.dirty=true;
     renderWorkout();
   };
