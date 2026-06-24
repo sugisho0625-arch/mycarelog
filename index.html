@@ -369,7 +369,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.16.2 — 筋トレの回数/セット初期値を「前回入力した値」に（毎回の微調整を減らす）。
+    叩き台 v0.16.3 — 塗る順を是正（夜のビタミンCをアルティミューンの前へ／水溶性さらさら→油分重いの原則）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -462,8 +462,8 @@ const stepNightFull = () => [
   {cats:[CAT.cleanseOil]},
   {cats:[CAT.washNormal, CAT.washClay], label:'洗顔', note:'通常と泥ジェルは交互（泥ジェルは週3-4回）'},
   {cats:[CAT.toner]},
+  {cats:[CAT.vitC], choice:'attack', note:'夜に使うなら少量（水溶性で先・レチ・美顔器とは重ねない）'},
   {cats:[CAT.serumGuard]},
-  {cats:[CAT.vitC], choice:'attack', note:'夜に使うなら少量（レチ・美顔器とは重ねない）'},
   {cats:[CAT.retinol], choice:'attack'},
   {cats:[CAT.cream]},
   {cats:[CAT.device], choice:'attack'},
