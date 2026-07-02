@@ -170,10 +170,19 @@
     width:100%; text-align:left; margin:-6px 0;
   }
   .hist-list{margin-top:6px;}
+  /* 月ごとの折りたたみ（行のどこを押しても開閉・v0.14.1と同じ思想） */
+  .month-toggle{
+    width:100%; text-align:left; display:flex; align-items:center; gap:7px;
+    background:#f4f7fa; border:1px solid var(--line); border-radius:10px;
+    padding:11px 12px; margin-top:8px; font-size:.86rem; font-weight:700;
+    color:var(--ink); cursor:pointer;
+  }
+  .month-toggle .cnt{font-size:.74rem; color:var(--sub); font-weight:600;}
+  .month-body{padding:0 2px;}
   .hist-item{
     border-top:1px solid var(--line); padding:10px 2px; font-size:.84rem;
   }
-  .hist-item:first-child{border-top:none;}
+  .month-body .hist-item:first-child{border-top:none;}
   .hist-head{display:flex; justify-content:space-between; color:var(--sub); margin-bottom:3px;}
   .hist-head .sh{color:var(--accent); font-weight:600;}
   .hist-items{color:var(--ink); line-height:1.7;}
@@ -201,6 +210,13 @@
   .item-row .nm{font-size:.88rem; font-weight:600;}
   .item-row .meta{font-size:.74rem; color:var(--sub);}
   .item-row.archived .nm{color:var(--sub); text-decoration:line-through; font-weight:400;}
+  /* 役割（カテゴリ）の棚見出し */
+  .cat-group{display:flex; align-items:center; gap:8px; margin:16px 0 4px;}
+  .cat-group:first-of-type{margin-top:6px;}
+  .cat-group .role{font-size:.8rem; font-weight:700; color:var(--accent); background:var(--accent-soft); border:1px solid var(--line); border-radius:999px; padding:3px 11px; white-space:nowrap;}
+  .cat-group .cnt{font-size:.7rem; color:var(--sub); white-space:nowrap;}
+  .cat-group .ln{flex:1; height:1px; background:var(--line);}
+  .cat-group + .item-row{border-top:none;}
   .item-acts{flex:0 0 auto; display:flex; gap:6px;}
   .item-acts button{
     border:1px solid var(--line); background:#fff; color:var(--sub);
@@ -369,7 +385,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.16.3 — 塗る順を是正（夜のビタミンCをアルティミューンの前へ／水溶性さらさら→油分重いの原則）。
+    叩き台 v0.16.6 — 夜勤の出勤前にクレンジング・洗顔を追加（出勤前にお風呂に入る日の記録先。夜勤前NGルールは無しを確認済み）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -389,6 +405,13 @@ const CAT = {
 };
 /* 中身が減らないカテゴリ（ボトル管理の対象外） */
 const NON_CONSUMABLE_CATS = [CAT.device, CAT.scalp, CAT.pao];
+
+/* マイアイテムを「役割の棚」で並べる表示順（spec §1：商品でなくカテゴリで設計） */
+const CAT_ORDER = [
+  CAT.cleanseOil, CAT.washNormal, CAT.washClay, CAT.toner,
+  CAT.serumGuard, CAT.vitC, CAT.retinol, CAT.cream,
+  CAT.allinone, CAT.uv, CAT.device, CAT.scalp, CAT.pao,
+];
 
 /* 初期アイテム（田畑さんの実データ・spec.md §3。IDは過去の記録と互換） */
 const DEFAULT_ITEMS = [
@@ -452,6 +475,8 @@ const stepMorningWork = () => [
   {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
 ];
 const stepShukkin = () => [
+  {cats:[CAT.cleanseOil], note:'出勤前にお風呂に入る日・乾いた肌'},
+  {cats:[CAT.washNormal, CAT.washClay], label:'洗顔', note:'出勤前にお風呂に入る日（通常と泥ジェルは交互）'},
   {cats:[CAT.pao]},
   {cats:[CAT.toner]},
   {cats:[CAT.vitC], note:'出勤前も可・少量から（公式は朝晩2回／夜のレチ・美顔器とは分ける）'},
@@ -1150,14 +1175,39 @@ function shiftLabelOf(id){
   const s=SHIFTS.find(x=>x.id===id); return s?s.label:id;
 }
 
+let openHistMonths=null; // 開いている月（初期値＝今月だけ。開閉は記録ごとに保持）
 function renderHistory(){
   const el=document.getElementById('histList');
   const sLog=loadLog(), wLog=loadWorkoutLog();
   const dates=[...new Set([...sLog.map(r=>r.date), ...wLog.map(r=>r.date)])].sort((a,b)=>b.localeCompare(a));
   if(!dates.length){ el.innerHTML='<div class="empty">まだ記録がありません。</div>'; return; }
   el.innerHTML='';
+  if(!openHistMonths) openHistMonths=new Set([todayKey.slice(0,7)]);
+
+  // 月ごとに枠を分ける（今月だけ開いた状態・過去月は畳む＝2026-06-26 田畑さんFB）
+  const byMonth={};
+  dates.forEach(d=>{ const m=d.slice(0,7); (byMonth[m]=byMonth[m]||[]).push(d); });
+  const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
+
   const order=['kitaku','m','kishou','shukkin','n'];
-  dates.forEach(date=>{
+  months.forEach(month=>{
+    const open=openHistMonths.has(month);
+    const label=`${month.slice(0,4)}年${parseInt(month.slice(5),10)}月`;
+    const head=document.createElement('button');
+    head.className='month-toggle';
+    head.innerHTML=`<span>${open?'▾':'▸'} ${label}</span><span class="cnt">${byMonth[month].length}日分</span>`;
+    head.onclick=()=>{
+      if(openHistMonths.has(month)) openHistMonths.delete(month); else openHistMonths.add(month);
+      renderHistory();
+    };
+    el.appendChild(head);
+
+    const body=document.createElement('div');
+    body.className='month-body';
+    if(!open){ body.style.display='none'; el.appendChild(body); return; }
+    el.appendChild(body);
+
+    byMonth[month].forEach(date=>{
     const r=sLog.find(x=>x.date===date);
     const w=wLog.find(x=>x.date===date);
     const div=document.createElement('div'); div.className='hist-item';
@@ -1189,7 +1239,8 @@ function renderHistory(){
         </span>
       </div>
       <div class="hist-items">${lines.join('<br>')||'—'}</div>`;
-    el.appendChild(div);
+    body.appendChild(div);
+    });
   });
   el.querySelectorAll('[data-e]').forEach(btn=>{
     btn.onclick=()=>{
@@ -1232,19 +1283,30 @@ function renderItems(){
 
   const act=activeItems(), arch=allItems().filter(i=>i.archived);
 
-  act.forEach(it=>{
-    if(editingItemId===it.id){ el.appendChild(buildItemForm(it)); return; }
-    const row=document.createElement('div'); row.className='item-row';
-    row.innerHTML=`
-      <div>
-        <div class="nm">${it.name}</div>
-        <div class="meta">${it.cat}${it.note?'・'+it.note:''}</div>
-      </div>
-      <div class="item-acts">
-        <button class="edit" data-ed="${it.id}">✏️ 編集</button>
-        <button data-ar="${it.id}">使わない</button>
-      </div>`;
-    el.appendChild(row);
+  // 役割（カテゴリ）ごとに棚分け：商品の羅列でなく「機能カテゴリ」で並べる（spec §1）
+  const byCat={};
+  act.forEach(it=>{ (byCat[it.cat]=byCat[it.cat]||[]).push(it); });
+  const cats=CAT_ORDER.filter(c=>byCat[c]);
+  Object.keys(byCat).forEach(c=>{ if(!cats.includes(c)) cats.push(c); }); // 未知カテゴリも末尾に
+
+  cats.forEach(cat=>{
+    const head=document.createElement('div'); head.className='cat-group';
+    head.innerHTML=`<span class="role">${cat}</span><span class="cnt">${byCat[cat].length}点</span><span class="ln"></span>`;
+    el.appendChild(head);
+    byCat[cat].forEach(it=>{
+      if(editingItemId===it.id){ el.appendChild(buildItemForm(it)); return; }
+      const row=document.createElement('div'); row.className='item-row';
+      row.innerHTML=`
+        <div>
+          <div class="nm">${it.name}</div>
+          ${it.note?`<div class="meta">${it.note}</div>`:''}
+        </div>
+        <div class="item-acts">
+          <button class="edit" data-ed="${it.id}">✏️ 編集</button>
+          <button data-ar="${it.id}">使わない</button>
+        </div>`;
+      el.appendChild(row);
+    });
   });
 
   if(arch.length){
