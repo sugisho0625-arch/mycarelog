@@ -385,7 +385,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.16.6 — 夜勤の出勤前にクレンジング・洗顔を追加（出勤前にお風呂に入る日の記録先。夜勤前NGルールは無しを確認済み）。
+    叩き台 v0.16.8 — ランニングを距離(m)記録に（±100m・前回値が初期値・コースが変わっても使える）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -452,6 +452,8 @@ const DEFAULT_EXERCISES = [
   {id:'inverted_row',   name:'斜め懸垂（順手）',                part:'引く', unit:'回', defAmount:5,  defSets:3},
   {id:'inverted_row_un',name:'斜め懸垂（逆手）',                part:'引く', unit:'回', defAmount:5,  defSets:3},
   {id:'back_ext',      name:'背筋（スーパーマン・5秒キープ）',  part:'引く', unit:'回', defAmount:10, defSets:3},
+  /* ランニング＝距離(m)を直接記録（コース非依存＝引っ越しても単位が生きる）。±100mステップ・前回値が初期値 */
+  {id:'running',       name:'ランニング',                     part:'脚', unit:'m', defAmount:5300, defSets:1},
 ];
 
 const SHIFTS = [
@@ -664,6 +666,16 @@ function saveExercises(arr){ localStorage.setItem(LS_EXERCISES, JSON.stringify(a
 function activeExercises(){ return allExercises().filter(e=>!e.archived); }
 function exById(id){ return allExercises().find(e=>e.id===id)||null; }
 function newExId(){ return 'w'+Date.now().toString(36)+Math.floor(Math.random()*100); }
+
+/* v0.16.7の✓式ランニング → v0.16.8の距離(m)式へ移行（ユーザー編集名は触らない） */
+(function migrateRunningUnit(){
+  const arr=allExercises();
+  const r=arr.find(e=>e.id==='running');
+  if(r && r.unit==='✓'){
+    r.unit='m'; r.defAmount=5300; r.defSets=1;
+    saveExercises(arr);
+  }
+})();
 
 /* 既存ユーザー並べ替え：斜め懸垂（逆手）を（順手）の直後に（後から追加で末尾に入った分の是正） */
 (function migrateExOrder(){
@@ -1520,7 +1532,8 @@ function workoutSummary(rec){
   return rec.entries.map(e=>{
     const ex=exById(e.exId); const nm=ex?ex.name.replace(/（.*?）/g,''):'種目';
     const unit=ex?ex.unit:'回';
-    return `${nm} ${e.amount}${unit}×${e.sets}`;
+    if(unit==='✓') return nm;  // チェック式＝名前だけ（回数×セットなし）
+    return `${nm} ${e.amount}${unit}${e.sets>1?'×'+e.sets:''}`;  // 1セットは「×1」を省略（ラン 5300m 等）
   });
 }
 
@@ -1585,14 +1598,15 @@ function buildExerciseRow(ex){
   const amount=picked?picked.amount:def.amount;
   const row=document.createElement('div');
   row.className='wk-ex'+(on?' on':'');
-  const step=ex.unit==='秒'?5:1;
+  const step=ex.unit==='m'?100:(ex.unit==='秒'?5:1);
+  const checkOnly = ex.unit==='✓';
   row.innerHTML=`
     <div class="wk-head">
       <div class="box">${on?'✓':''}</div>
       <div class="wk-name">${ex.name}</div>
-      ${on?`<div class="wk-set-summary">${amount}${ex.unit}×${sets}</div>`:''}
+      ${on&&!checkOnly?`<div class="wk-set-summary">${amount}${ex.unit}${sets>1?'×'+sets:''}</div>`:''}
     </div>
-    <div class="wk-controls">
+    ${checkOnly?'':`<div class="wk-controls">
       <div class="wk-ctl-row">
         <span class="clbl">1セットあたり</span>
         <div class="stepper" data-f="amount">
@@ -1607,7 +1621,7 @@ function buildExerciseRow(ex){
           <span class="unit">セット</span>
         </div>
       </div>
-    </div>`;
+    </div>`}`;
   // ヘッダタップ＝ON/OFF
   row.querySelector('.wk-head').onclick=()=>{
     if(wstate.picked[ex.id]) delete wstate.picked[ex.id];
@@ -1675,7 +1689,7 @@ function buildExerciseEditor(){
   activeExercises().forEach(ex=>{
     if(editingExId===ex.id){ wrap.appendChild(buildExForm(ex)); return; }
     const row=document.createElement('div'); row.className='item-row';
-    row.innerHTML=`<div><div class="nm">${ex.name}</div><div class="meta">${ex.part}・${ex.defAmount}${ex.unit}×${ex.defSets}</div></div>
+    row.innerHTML=`<div><div class="nm">${ex.name}</div><div class="meta">${ex.part}・${ex.unit==='✓'?'やった/やらなかった':ex.defAmount+ex.unit+(ex.defSets>1?'×'+ex.defSets:'')}</div></div>
       <div class="item-acts"><button class="edit" data-ed="${ex.id}">✏️</button><button data-ar="${ex.id}">削除</button></div>`;
     wrap.appendChild(row);
   });
@@ -1700,7 +1714,7 @@ function buildExForm(ex){
     <label>区分</label>
     <select id="exPart">${WK_PARTS.map(p=>`<option${ex&&ex.part===p?' selected':''}>${p}</option>`).join('')}</select>
     <label>単位</label>
-    <select id="exUnit"><option${ex&&ex.unit==='回'?' selected':''}>回</option><option${ex&&ex.unit==='秒'?' selected':''}>秒</option></select>
+    <select id="exUnit"><option${ex&&ex.unit==='回'?' selected':''}>回</option><option${ex&&ex.unit==='秒'?' selected':''}>秒</option><option value="m"${ex&&ex.unit==='m'?' selected':''}>m（距離）</option><option value="✓"${ex&&ex.unit==='✓'?' selected':''}>✓（やった/やらなかっただけ）</option></select>
     <label>標準の数（1セットあたり）</label>
     <input type="number" id="exAmount" value="${ex?ex.defAmount:10}" min="1">
     <label>標準のセット数</label>
