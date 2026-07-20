@@ -385,7 +385,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.16.8 — ランニングを距離(m)記録に（±100m・前回値が初期値・コースが変わっても使える）。
+    叩き台 v0.16.10 — サイドプランクを2種追加（上げ下げ＝10回×3／膝つき・脚上げ＝10秒×3）。従来のサイドプランクは過去記録のため据え置き。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -449,6 +449,10 @@ const DEFAULT_EXERCISES = [
   {id:'situp_twist',   name:'腹筋（ツイスト込み）',            part:'体幹', unit:'回', defAmount:20, defSets:3},
   {id:'twist_legraise',name:'ツイストレッグレイズ',           part:'体幹', unit:'回', defAmount:10, defSets:3},
   {id:'side_plank',    name:'サイドプランク（左右）',          part:'体幹', unit:'秒', defAmount:80, defSets:3},
+  /* サイドプランクの派生2種（2026-07-20 田畑さん）。動的＝回／静的＝秒で分ける。旧side_plankは過去記録のため残す。
+     ※区別する言葉は括弧の外に置く（履歴表示は括弧内を省略するため） */
+  {id:'side_plank_dip',  name:'サイドプランク・上げ下げ（左右）',       part:'体幹', unit:'回', defAmount:10, defSets:3},
+  {id:'side_plank_star', name:'サイドプランク・膝つき脚上げ（左右）',   part:'体幹', unit:'秒', defAmount:10, defSets:3},
   {id:'inverted_row',   name:'斜め懸垂（順手）',                part:'引く', unit:'回', defAmount:5,  defSets:3},
   {id:'inverted_row_un',name:'斜め懸垂（逆手）',                part:'引く', unit:'回', defAmount:5,  defSets:3},
   {id:'back_ext',      name:'背筋（スーパーマン・5秒キープ）',  part:'引く', unit:'回', defAmount:10, defSets:3},
@@ -497,6 +501,7 @@ const stepNightFull = () => [
   {cats:[CAT.scalp], note:'頭皮・毎日OK・レチノールと併用OK'},
 ];
 const stepNightGuard = () => [
+  {cats:[CAT.uv], note:'帰り道の前に（職場でスティックUV・朝の通勤の紫外線対策）'},
   {cats:[CAT.cleanseOil], note:'肌の状態次第で'},
   {cats:[CAT.washNormal, CAT.washClay], label:'洗顔', note:'通常洗顔のみ（泥ジェルのパック/マッサージNG）'},
   {cats:[CAT.toner]},
