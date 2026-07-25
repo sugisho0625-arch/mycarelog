@@ -117,7 +117,8 @@
   .step.checked .box{background:var(--done); border-color:var(--done);}
   .step-body{flex:1; min-width:0;}
   .step-name{font-size:.95rem; font-weight:600;}
-  .step.checked .step-name{color:var(--sub); text-decoration:line-through;}
+  /* チェック済み＝✓＋緑背景＋文字グレーのみ（斜線はv0.16.13で廃止＝「使った」は残したい事実で、消すToDoではない） */
+  .step.checked .step-name{color:var(--sub);}
   .step-note{font-size:.76rem; color:var(--sub); margin-top:1px;}
   .step .cat{
     display:inline-block; font-size:.66rem; color:var(--accent);
@@ -398,7 +399,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.16.12 — 塗り直しバッジ（×N）を大きく・周囲にも当たり判定を拡大（タップ時にチェックが外れる誤操作の対策）。
+    叩き台 v0.16.13 — チェック済み項目の斜線を廃止（✓＋緑背景＋文字グレーのみ。「使った」は残したい事実で、消すToDoではない）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
