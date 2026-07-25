@@ -246,6 +246,15 @@
   .chip-freq{ font-size:.66rem; color:var(--sub); font-weight:600; margin-left:4px; }
   .chip-freq.hot{ color:#b4541f; }
 
+  /* 塗り直し回数バッジ（チェック済み項目のみ・タップで×2→…→×5→×1）v0.16.11 */
+  .use-x{
+    display:inline-block; margin-left:7px; padding:1px 8px; border-radius:10px;
+    font-size:.72rem; font-weight:700; color:var(--sub); background:#eef2f6;
+    border:1px solid var(--line); cursor:pointer; vertical-align:1px;
+  }
+  .use-x.many{ color:#fff; background:var(--accent); border-color:var(--accent); }
+  .ichip .use-x{ margin-left:5px; padding:0 6px; font-size:.68rem; }
+
   /* データ管理 */
   .data-note{font-size:.78rem; color:var(--sub); margin:4px 0 10px;}
   .data-row{display:flex; gap:8px;}
@@ -385,7 +394,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.16.10 — サイドプランクを2種追加（上げ下げ＝10回×3／膝つき・脚上げ＝10秒×3）。従来のサイドプランクは過去記録のため据え置き。
+    叩き台 v0.16.11 — 塗り直し記録に対応（チェック済み項目の「×1」をタップで×2〜×5。日焼け止めの夏の複数回塗りなど・ボトル残量の精度も向上）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -755,7 +764,12 @@ function exDefaultValue(exId){
 /* ===========================================================
    状態（editDate：今日 or 過去日）／保存は「記録を保存」ボタンで
    =========================================================== */
-let state = { editDate: todayKey, shift: null, noCare: false, checked: new Set(), dirty: false };
+/* 同じ枠で同じ商品を1日に複数回（塗り直し等）記録できる上限。将来は設定画面で任意に（2026-07-20 田畑さん） */
+const MAX_USES_PER_SLOT = 5;
+
+let state = { editDate: todayKey, shift: null, noCare: false, checked: new Set(), counts: {}, dirty: false };
+
+function useCountOf(uid){ return state.counts[uid]||1; }
 
 function loadStateFor(date){
   state.editDate = date;
@@ -763,13 +777,20 @@ function loadStateFor(date){
   if(rec){
     state.shift = rec.shift;
     state.noCare = !!rec.noCare;
-    const uids=[];
-    Object.entries(rec.slots||{}).forEach(([k,ids])=>ids.forEach(id=>uids.push(k+':'+id)));
+    const uids=[]; const counts={};
+    // 同じIDが複数入っていたら回数として読む（塗り直し記録・旧記録は1回ずつで互換）
+    Object.entries(rec.slots||{}).forEach(([k,ids])=>ids.forEach(id=>{
+      const uid=k+':'+id;
+      if(uids.includes(uid)) counts[uid]=(counts[uid]||1)+1;
+      else uids.push(uid);
+    }));
     state.checked = new Set(uids);
+    state.counts = counts;
   }else{
     state.shift = (date===todayKey) ? (localStorage.getItem(LS_SHIFT)||null) : null;
     state.noCare = false;
     state.checked = new Set();
+    state.counts = {};
   }
   state.dirty = false;
 }
@@ -791,7 +812,8 @@ function doSave(){
   state.checked.forEach(uid=>{
     const i=uid.indexOf(':');
     const k=uid.slice(0,i), id=uid.slice(i+1);
-    (slots[k]=slots[k]||[]).push(id);
+    const n=useCountOf(uid);  // 塗り直し回数分、同じIDを入れる（読み込み側で回数に復元）
+    for(let x=0;x<n;x++) (slots[k]=slots[k]||[]).push(id);
   });
   upsertRec({
     date: state.editDate,
@@ -851,7 +873,8 @@ function usesBetween(itemId, startKey, endKey){
     if(r.noCare) return;
     if(r.date<startKey) return;
     if(endKey && r.date>endKey) return;
-    Object.values(r.slots||{}).forEach(ids=>{ if(ids.includes(itemId)) c++; });
+    /* 同じIDの重複＝塗り直し回数として数える（消費量の精度・v0.16.11） */
+    Object.values(r.slots||{}).forEach(ids=>{ c+=ids.filter(x=>x===itemId).length; });
   });
   return c;
 }
@@ -1075,6 +1098,7 @@ function clearOtherAttack(slot, exceptStep){
     if(st===exceptStep || st.choice!=='attack') return;
     activeItems().filter(it=>st.cats.includes(it.cat)).forEach(it=>{
       state.checked.delete(slot.key+':'+it.id);
+      delete state.counts[slot.key+':'+it.id];
     });
   });
 }
@@ -1120,23 +1144,33 @@ function renderRoutine(){
         const it=its[0];
         const uid=slot.key+':'+it.id;
         const checked=state.checked.has(uid);
+        const n=useCountOf(uid);
         const li=document.createElement('li');
         li.className='step'+(checked?' checked':'');
         const note = step.note || it.note || '';
         li.innerHTML=`
           <div class="box">${checked?'✓':''}</div>
           <div class="step-body">
-            <div class="step-name">${it.name}</div>
+            <div class="step-name">${it.name}${checked?`<button class="use-x${n>1?' many':''}" data-x="${uid}">×${n}</button>`:''}</div>
             ${note?`<div class="step-note">${note}</div>`:''}
             <span class="cat">${it.cat}${step.choice?' · どちらか一方':''}</span>
           </div>
           ${freqBadgeHTML(it.id, false)}`;
         li.onclick=()=>{
-          if(checked){ state.checked.delete(uid); }
+          if(checked){ state.checked.delete(uid); delete state.counts[uid]; }
           else{
             state.checked.add(uid);
             if(step.choice==='attack') clearOtherAttack(slot, step);
           }
+          markDirty();
+          renderRoutine();
+        };
+        const xb=li.querySelector('.use-x');
+        if(xb) xb.onclick=(ev)=>{
+          ev.stopPropagation();
+          const cur=useCountOf(uid);
+          state.counts[uid] = cur>=MAX_USES_PER_SLOT ? 1 : cur+1;
+          if(state.counts[uid]===1) delete state.counts[uid];
           markDirty();
           renderRoutine();
         };
@@ -1154,9 +1188,11 @@ function renderRoutine(){
             <div class="step-name">${label} <span style="font-weight:400;color:var(--sub);font-size:.8rem">— 使った方をタップ</span></div>
             ${note?`<div class="step-note">${note}</div>`:''}
             <div class="item-chips">${its.map(it=>{
-              const on=state.checked.has(slot.key+':'+it.id);
+              const uid=slot.key+':'+it.id;
+              const on=state.checked.has(uid);
+              const n=useCountOf(uid);
               const y=freqBadgeHTML(it.id, true);
-              return `<button class="ichip${on?' on':''}" data-uid="${slot.key+':'+it.id}">${shortName(it.id)}${y}</button>`;
+              return `<button class="ichip${on?' on':''}" data-uid="${uid}">${shortName(it.id)}${y}${on?`<span class="use-x${n>1?' many':''}" data-x="${uid}">×${n}</span>`:''}</button>`;
             }).join('')}</div>
             <span class="cat">${step.cats.join('・')}${step.choice?' · どちらか一方':''}</span>
           </div>`;
@@ -1164,7 +1200,16 @@ function renderRoutine(){
           ch.onclick=(ev)=>{
             ev.stopPropagation();
             const uid=ch.getAttribute('data-uid');
-            if(state.checked.has(uid)){ state.checked.delete(uid); }
+            /* ×N部分のタップ＝回数を増やす（チップOFFにしない） */
+            if(ev.target.classList && ev.target.classList.contains('use-x')){
+              const cur=useCountOf(uid);
+              state.counts[uid] = cur>=MAX_USES_PER_SLOT ? 1 : cur+1;
+              if(state.counts[uid]===1) delete state.counts[uid];
+              markDirty();
+              renderRoutine();
+              return;
+            }
+            if(state.checked.has(uid)){ state.checked.delete(uid); delete state.counts[uid]; }
             else{
               state.checked.add(uid);
               if(step.choice==='attack') clearOtherAttack(slot, step);
@@ -1239,7 +1284,11 @@ function renderHistory(){
           const ids=(r.slots||{})[k]||[];
           if(ids.length || defined.includes(k)){
             const meta=SLOT_META[k];
-            lines.push(`${meta.icon} ${ids.length ? ids.map(shortName).join('、') : '<span style="color:var(--sub)">—（ケアなし）</span>'}`);
+            /* 同IDの重複＝塗り直し回数として「商品名 ×2」表示 */
+            const seen=[]; const cnt={};
+            ids.forEach(id=>{ if(cnt[id]) cnt[id]++; else { cnt[id]=1; seen.push(id); } });
+            const names=seen.map(id=>shortName(id)+(cnt[id]>1?` <span style="color:var(--sub)">×${cnt[id]}</span>`:''));
+            lines.push(`${meta.icon} ${names.length ? names.join('、') : '<span style="color:var(--sub)">—（ケアなし）</span>'}`);
           }
         });
       }
