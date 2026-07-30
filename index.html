@@ -399,7 +399,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.16.13 — チェック済み項目の斜線を廃止（✓＋緑背景＋文字グレーのみ。「使った」は残したい事実で、消すToDoではない）。
+    叩き台 v0.16.14 — 夜/就寝前枠にオールインワンを追加（時短の夜の記録先。クリームの後・夜はUV不要）。
   </footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -511,6 +511,7 @@ const stepNightFull = () => [
   {cats:[CAT.serumGuard]},
   {cats:[CAT.retinol], choice:'attack'},
   {cats:[CAT.cream]},
+  {cats:[CAT.allinone], note:'時短の夜に（夜はUV不要なのでこれ1つでもOK）'},
   {cats:[CAT.device], choice:'attack'},
   {cats:[CAT.scalp], note:'頭皮・毎日OK・レチノールと併用OK'},
 ];
