@@ -408,7 +408,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.17.1 — 筋トレを「🏠宅トレ／🏋️センター」の場所別に。マシンは重量(kg)、ランニングマシンは距離＋時間(分)を記録。</footer>
+    叩き台 v0.17.2 — 筋トレを「🏠宅トレ／🏋️センター」の場所別に。マシンは重量(kg)、ランニングマシンは距離＋時間(分)。種目はアプリ内で自由に追加できます。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -492,7 +492,6 @@ const DEFAULT_EXERCISES = [
      ※バックエクステンションは宅トレのback_extと同種目＝場所で分けて記録し、集計時に比較できる */
   {id:'c_chest',    name:'チェストプレス',        place:'center', part:'押す', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
   {id:'c_backext',  name:'バックエクステンション', place:'center', part:'引く', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
-  {id:'c_pull',     name:'引く系マシン',          place:'center', part:'引く', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
   {id:'c_abdominal',name:'アブドミナルクランチ',   place:'center', part:'体幹', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
   {id:'c_torso',    name:'ロータリートルソー',     place:'center', part:'体幹', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
   /* ランニングマシン＝距離(m)＋時間(分)。平均速度は距離÷時間で後から算出可・傾斜/カロリーはメモ運用（2026-08-30 田畑さん選択） */
@@ -709,6 +708,13 @@ function newItemId(){ return 'u'+Date.now().toString(36)+Math.floor(Math.random(
   // v0.17.1：既にセンター種目を持つ場合、ランニングマシンに時間(分)欄を補完
   const tm=a.find(e=>e.id==='c_treadmill');
   if(tm && !tm.useMinutes){ tm.useMinutes=true; tm.defMinutes=20; changed=true; }
+  // v0.17.2：仮名だった「引く系マシン」は削除（正式名が分かってから本人が追加する方針・2026-08-30）
+  //  ※ 記録が既にある場合は残す（過去データを壊さない）
+  const pi=a.findIndex(e=>e.id==='c_pull');
+  if(pi>=0){
+    const used=loadWorkoutLog().some(r=>(r.entries||[]).some(e=>e.exId==='c_pull'));
+    if(!used){ a.splice(pi,1); changed=true; }
+  }
   if(changed) localStorage.setItem(LS_EXERCISES, JSON.stringify(a));
 })();
 function allExercises(){ try{return JSON.parse(localStorage.getItem(LS_EXERCISES))||[];}catch(e){return [];} }
