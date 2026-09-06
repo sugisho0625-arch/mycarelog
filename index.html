@@ -428,7 +428,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.19 — 服薬の枠を色分け（紫）＋前回塗布からの経過時間を表示。時刻は保存した瞬間を自動記録。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.19.1 — 服薬の枠を色分け（紫）＋前回塗布からの経過時間。開いたまま日付をまたいでも今日に切り替わるよう修正。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -655,8 +655,11 @@ const LS_WORKOUT = 'mcl_workout_v1';
 
 function pad(n){ return String(n).padStart(2,'0'); }
 function dateKeyOf(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
-const todayKey = dateKeyOf(new Date());
-const yesterdayKey = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dateKeyOf(d); })();
+/* 日付（v0.19.1・2026-09-07）：起動時に1回だけ計算していたため、
+   アプリを開いたまま日付をまたぐと「今日」が前日のまま固定される不具合があった。
+   → let にして checkDayRollover() から更新できるようにする。 */
+let todayKey = dateKeyOf(new Date());
+let yesterdayKey = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dateKeyOf(d); })();
 function dayBefore(key){
   const d=new Date(key+'T00:00:00'); d.setDate(d.getDate()-1); return dateKeyOf(d);
 }
@@ -2042,6 +2045,42 @@ function renderAll(){
 
 document.getElementById('today').textContent=fmtHeader();
 document.getElementById('saveBtn').onclick=doSave;
+
+/* ===========================================================
+   日付またぎの検知（v0.19.1・2026-09-07）
+   スマホでアプリを開いたままにすると再読み込みが起きず、日付が前日のまま止まる。
+   画面を見た瞬間（復帰時）と1分ごとに実際の日付を確かめ、変わっていたら今日に進める。
+   ⚠️未保存の入力がある場合は勝手に切り替えない＝書きかけを消さない。
+     その場合は編集中の日付を保ったまま（表示は「昨日」に変わる）お知らせだけ出す。
+   =========================================================== */
+function checkDayRollover(){
+  const nowKey = dateKeyOf(new Date());
+  if(nowKey === todayKey) return false;
+
+  const wasOnToday = (state.editDate === todayKey);
+  const prevToday  = todayKey;
+  todayKey = nowKey;
+  yesterdayKey = dayBefore(todayKey);
+  document.getElementById('today').textContent = fmtHeader();
+
+  if(wasOnToday && !state.dirty){
+    loadStateFor(todayKey);          // 今日の記録に進む（未保存の入力はないので安全）
+    renderAll();
+    flashToast('📅 日付が変わりました');
+  }else if(wasOnToday && state.dirty){
+    renderAll();                     // editDate は据え置き＝書きかけを守る（表示は「昨日」になる）
+    flashToast('📅 日付が変わりました（編集中は '+fmtMD(prevToday)+' の分）');
+  }else{
+    renderAll();                     // 過去日を見ていた＝日付ボタンの並びだけ更新
+  }
+  refreshMedElapsed();
+  return true;
+}
+/* 画面に戻った瞬間＋1分ごとに確認（スマホは裏に回ると setInterval が止まるため両方必要） */
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') checkDayRollover(); });
+window.addEventListener('focus', checkDayRollover);
+window.addEventListener('pageshow', checkDayRollover);
+setInterval(checkDayRollover, 60000);
 
 function wireToggle(btnId, panelId, title, onOpen){
   document.getElementById(btnId).onclick=function(){
