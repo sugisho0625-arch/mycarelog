@@ -408,7 +408,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.17.2 — 筋トレを「🏠宅トレ／🏋️センター」の場所別に。マシンは重量(kg)、ランニングマシンは距離＋時間(分)。種目はアプリ内で自由に追加できます。</footer>
+    叩き台 v0.18 — 服薬の記録に対応（独立カテゴリ・就寝前枠・前回◯日前バッジ・週の残り回数の目安）。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -423,16 +423,20 @@ const CAT = {
   cleanseOil:'クレンジングオイル', washNormal:'洗顔(通常)', washClay:'洗顔(クレイ)',
   toner:'化粧水', serumGuard:'守りの美容液', vitC:'ビタミンC', retinol:'レチノール類',
   cream:'クリーム', allinone:'オールインワン', uv:'日焼け止め',
-  device:'美顔器', scalp:'頭皮ケアデバイス', pao:'表情筋トレ'
+  device:'美顔器', scalp:'頭皮ケアデバイス', pao:'表情筋トレ',
+  /* 服薬（v0.18・2026-08-30）：スキンケアとは性質が違うため独立カテゴリ。
+     理由＝①ケア用品の集計に混ざらない（月次集計/記事のデータが濁らない）
+           ②バックアップを人に見せる時に分離できる（病名が推測される情報の保護） */
+  medicine:'服薬'
 };
 /* 中身が減らないカテゴリ（ボトル管理の対象外） */
-const NON_CONSUMABLE_CATS = [CAT.device, CAT.scalp, CAT.pao];
+const NON_CONSUMABLE_CATS = [CAT.device, CAT.scalp, CAT.pao, CAT.medicine];
 
 /* マイアイテムを「役割の棚」で並べる表示順（spec §1：商品でなくカテゴリで設計） */
 const CAT_ORDER = [
   CAT.cleanseOil, CAT.washNormal, CAT.washClay, CAT.toner,
   CAT.serumGuard, CAT.vitC, CAT.retinol, CAT.cream,
-  CAT.allinone, CAT.uv, CAT.device, CAT.scalp, CAT.pao,
+  CAT.allinone, CAT.uv, CAT.device, CAT.scalp, CAT.pao, CAT.medicine,
 ];
 
 /* 初期アイテム（田畑さんの実データ・spec.md §3。IDは過去の記録と互換） */
@@ -451,12 +455,15 @@ const DEFAULT_ITEMS = [
   {id:'cream',      name:'スキンエンパワリングクリーム', cat:CAT.cream,      note:'毎晩・美顔器併用OK'},
   {id:'device',     name:'STELLA BEAUTE 美顔器',      cat:CAT.device,     note:'数日に1回・レチノールと同夜NG'},
   {id:'scalp',      name:'STELLA BEAUTE 美顔器（頭皮）', cat:CAT.scalp,     note:'頭皮・毎日OK・1日30分以内・レチノール併用OK'},
+  /* 処方薬（v0.18・2026-08-30）：ベセルナクリーム＝週3回・1日1回・就寝前。塗布後6〜10時間は洗わない。
+     ⚠️用法の判断は処方医/薬剤師が正。アプリは記録と間隔の目安のみ。 */
+  {id:'besselna',   name:'ベセルナクリーム',            cat:CAT.medicine,  note:'週3回（例：月・水・金）／就寝前／塗布後6〜10時間は洗わない'},
 ];
 
 /* 連続使用を避けたい＝「前回○日前」を出す項目（spec §5）
    FREQ_HIGHLIGHT：昨日使ったらオレンジで警告（今日は控える）。PAO/通常洗顔は情報のみ。 */
-const FREQ_ITEMS = ['retinol','device','pao','washFancl','cleanseOil','washBiore'];
-const FREQ_HIGHLIGHT = ['retinol','device','washFancl','cleanseOil'];
+const FREQ_ITEMS = ['retinol','device','pao','washFancl','cleanseOil','washBiore','besselna'];
+const FREQ_HIGHLIGHT = ['retinol','device','washFancl','cleanseOil','besselna'];
 
 /* ===========================================================
    筋トレ（セルフケア記録への拡張・spec将来機能）
@@ -538,6 +545,7 @@ const stepNightFull = () => [
   {cats:[CAT.allinone], note:'時短の夜に（夜はUV不要なのでこれ1つでもOK）'},
   {cats:[CAT.device], choice:'attack'},
   {cats:[CAT.scalp], note:'頭皮・毎日OK・レチノールと併用OK'},
+  {cats:[CAT.medicine], note:'就寝前・週3回の目安（塗った後6〜10時間は洗わない）'},
 ];
 const stepNightGuard = () => [
   {cats:[CAT.uv], note:'帰り道の前に（職場でスティックUV・朝の通勤の紫外線対策）'},
@@ -548,6 +556,7 @@ const stepNightGuard = () => [
   {cats:[CAT.serumGuard]},
   {cats:[CAT.cream]},
   {cats:[CAT.scalp], note:'頭皮・毎日OK'},
+  {cats:[CAT.medicine], note:'この後すぐ就寝するなら（塗った後6〜10時間は洗わない）'},
 ];
 const stepMinimal = () => [
   {cats:[CAT.pao], note:'余裕があれば'},
@@ -1003,6 +1012,17 @@ function computeWarnings(){
   const pao7 = catCount(recordsInWindow(state.editDate,7), CAT.pao);
   if(pao7>=5){
     out.push({lv:'note', html:`<b>PAO</b>：直近7日で${pao7}回。週2日は休息を。今日は休んでも◎。`});
+  }
+  /* 服薬（v0.18）：週◯回の処方薬の残り回数を出す。※用法の判断は処方医/薬剤師が正・記録の写しに過ぎない */
+  const medItems = activeItems().filter(it=>it.cat===CAT.medicine);
+  if(medItems.length){
+    const med7 = catCount(recordsInWindow(state.editDate,7), CAT.medicine);
+    const nm = shortName(medItems[0].id);
+    if(med7>=3){
+      out.push({lv:'note', html:`💊 <b>${nm}</b>：直近7日で${med7}回。週3回が目安なので、今夜は<b>お休みの日</b>かもしれません（指示された曜日を優先）。`});
+    }else{
+      out.push({lv:'note', html:`💊 <b>${nm}</b>：直近7日で${med7}回（週3回の目安まであと${3-med7}回）。就寝前に塗ったら、その後6〜10時間は洗い流さない。`});
+    }
   }
   return out;
 }
