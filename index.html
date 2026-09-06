@@ -12,6 +12,8 @@
     --warn-bg:#fff4e5; --warn-line:#f0c089; --warn-ink:#8a5200;
     --danger-bg:#fdecec; --danger-line:#f0a3a3; --danger-ink:#a32020;
     --done:#2e9e6b; --radius:14px;
+    /* 服薬（v0.19）＝ケア用品と視覚的に分けるための紫系 */
+    --med-bg:#f5f1fb; --med-line:#d9cded; --med-ink:#5b4a76;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;}
@@ -124,6 +126,24 @@
     display:inline-block; font-size:.66rem; color:var(--accent);
     background:var(--accent-soft); border-radius:5px; padding:1px 6px; margin-top:4px;
   }
+  /* 服薬（v0.19）：ケア用品と枠を分ける＝紫系の背景。
+     警告(オレンジ)・危険(赤)・完了(緑)と衝突しない色を選択。 */
+  .step.med{ background:var(--med-bg); border-color:var(--med-line); }
+  .step.med.checked{ background:#ece4f7; border-color:#c9b6e4; }
+  .step.med .cat{ color:var(--med-ink); background:#ece4f7; }
+  .step.med .step-name{ color:var(--med-ink); }
+  .step.med.checked .step-name{ color:#7a6a92; }
+  .step.med .box{ border-color:#c1b0d8; }
+  .step.med.checked .box{ background:var(--med-ink); border-color:var(--med-ink); }
+  /* 前回塗布からの経過時間（v0.19） */
+  .med-elapsed{
+    font-size:.76rem; font-weight:700; color:var(--med-ink);
+    background:#ece4f7; border:1px solid var(--med-line);
+    border-radius:8px; padding:3px 8px; margin-top:5px; display:inline-block;
+  }
+  .med-elapsed .at{ font-weight:600; color:#7a6a92; }
+  .med-elapsed.none{ color:var(--sub); background:#f1f2f5; border-color:var(--line); }
+
   /* 同カテゴリ複数商品の選択チップ */
   .item-chips{display:flex; flex-wrap:wrap; gap:7px; margin-top:8px;}
   .ichip{
@@ -408,7 +428,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.18 — 服薬の記録に対応（独立カテゴリ・就寝前枠・前回◯日前バッジ・週の残り回数の目安）。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.19 — 服薬の枠を色分け（紫）＋前回塗布からの経過時間を表示。時刻は保存した瞬間を自動記録。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -669,6 +689,68 @@ function freqBadgeHTML(itemId, forChip){
 }
 
 /* ===========================================================
+   服薬の経過時間（v0.19・2026-09-06）
+   記録は日付単位だが、薬は「前回塗ってから何時間か」が要る（例：塗布後6〜10時間は洗わない）。
+   → 保存した瞬間の時刻を rec.medAt{itemId:ISO} に自動で残す。過去日を編集した場合は時刻を作らない
+     （その場にいなかった時刻を捏造しないため）＝その日は従来どおり「前回◯日前」だけ出る。
+   ※ここで出すのは記録の写し（経過時間）だけ。「洗ってよいか」の判断は処方医・薬剤師が正。 */
+function localISO(d){
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())
+       +'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+/* 保存時に医薬品の塗布時刻を組み立てる。既存の時刻は上書きしない（後から開き直しても記録が動かない） */
+function buildMedAt(prevMedAt, checkedIds, date){
+  const out={};
+  checkedIds.forEach(id=>{
+    if(prevMedAt && prevMedAt[id]) out[id]=prevMedAt[id];       // 既に時刻がある＝そのまま
+    else if(date===todayKey) out[id]=localISO(new Date());       // 今日の記録＝いまの時刻
+    // 過去日の記録＝時刻なし（日付だけの従来動作）
+  });
+  return out;
+}
+/* 直近の塗布時刻（editDate以前）を探す。なければ null */
+function lastMedTime(itemId, onOrBeforeDate){
+  const hits=loadLog()
+    .filter(r=>!r.noCare && r.date<=onOrBeforeDate && r.medAt && r.medAt[itemId])
+    .sort((a,b)=>a.date<b.date?-1:1);
+  return hits.length ? hits[hits.length-1].medAt[itemId] : null;
+}
+function elapsedText(iso){
+  const mins=Math.floor((Date.now()-new Date(iso).getTime())/60000);
+  if(mins<0) return null;
+  if(mins<60) return `${mins}分`;
+  const h=Math.floor(mins/60), m=mins%60;
+  if(h<48) return m ? `${h}時間${m}分` : `${h}時間`;
+  return `${Math.floor(h/24)}日${h%24}時間`;
+}
+function atText(iso){
+  const d=iso.slice(0,10), t=iso.slice(11,16);
+  return `${dayWordOf(d)} ${t}`;
+}
+/* 薬の行に出す経過表示。時刻がなければ日付ベースにフォールバック */
+function medElapsedHTML(itemId){
+  const iso=lastMedTime(itemId, state.editDate);
+  if(iso){
+    const e=elapsedText(iso);
+    if(e) return `<div class="med-elapsed" data-med="${itemId}">前回から ${e}<span class="at">（${atText(iso)}）</span></div>`;
+  }
+  const d=daysSinceLastUse(itemId, state.editDate);
+  const body = d===null ? '前回の記録なし' : `${freqText(d)}（時刻の記録なし）`;
+  return `<div class="med-elapsed none" data-med="${itemId}">${body}</div>`;
+}
+/* 経過時間だけ描き直す（画面全体は再描画しない＝入力中の状態を壊さない）。
+   1分ごと＋保存直後に呼ぶ。 */
+function refreshMedElapsed(){
+  document.querySelectorAll('.med-elapsed').forEach(el=>{
+    const id=el.dataset.med; if(!id) return;
+    const tmp=document.createElement('div'); tmp.innerHTML=medElapsedHTML(id);
+    el.className=tmp.firstChild.className;
+    el.innerHTML=tmp.firstChild.innerHTML;
+  });
+}
+setInterval(refreshMedElapsed, 60000);
+
+/* ===========================================================
    マイアイテム（登録商品）
    =========================================================== */
 (function ensureItems(){
@@ -867,15 +949,21 @@ function doSave(){
     const n=useCountOf(uid);  // 塗り直し回数分、同じIDを入れる（読み込み側で回数に復元）
     for(let x=0;x<n;x++) (slots[k]=slots[k]||[]).push(id);
   });
+  /* 服薬の塗布時刻（v0.19）：チェック済みの薬だけ時刻を持たせる。既存の時刻は保持＝開き直しても動かない */
+  const prev=getRec(state.editDate);
+  const medIds=[...new Set(Object.values(slots).flat().filter(id=>itemCat(id)===CAT.medicine))];
+  const medAt = state.noCare ? {} : buildMedAt(prev && prev.medAt, medIds, state.editDate);
   upsertRec({
     date: state.editDate,
     shift: state.shift,
     noCare: state.noCare,
     slots: state.noCare ? {} : slots,
+    medAt,
   });
   state.dirty=false;
   flashToast();
   updateSaveBtn();
+  refreshMedElapsed();   /* 保存した瞬間の塗布時刻を即座に反映（v0.19） */
   renderBanner();
   renderWarnings();
   renderHistoryIfOpen();
@@ -1208,17 +1296,19 @@ function renderRoutine(){
         const uid=slot.key+':'+it.id;
         const checked=state.checked.has(uid);
         const n=useCountOf(uid);
+        const isMed = (it.cat===CAT.medicine);
         const li=document.createElement('li');
-        li.className='step'+(checked?' checked':'');
+        li.className='step'+(checked?' checked':'')+(isMed?' med':'');
         const note = step.note || it.note || '';
         li.innerHTML=`
           <div class="box">${checked?'✓':''}</div>
           <div class="step-body">
             <div class="step-name">${it.name}${checked?`<button class="use-x${n>1?' many':''}" data-x="${uid}">×${n}</button>`:''}</div>
             ${note?`<div class="step-note">${note}</div>`:''}
-            <span class="cat">${it.cat}${step.choice?' · どちらか一方':''}</span>
+            <span class="cat">${isMed?'💊 ':''}${it.cat}${step.choice?' · どちらか一方':''}</span>
+            ${isMed?medElapsedHTML(it.id):''}
           </div>
-          ${freqBadgeHTML(it.id, false)}`;
+          ${isMed?'':freqBadgeHTML(it.id, false)}`;
         li.onclick=()=>{
           if(checked){ state.checked.delete(uid); delete state.counts[uid]; }
           else{
@@ -1241,8 +1331,9 @@ function renderRoutine(){
       }else{
         /* 同カテゴリに複数商品 → 使った商品を選ぶ */
         const anyChecked=its.some(it=>state.checked.has(slot.key+':'+it.id));
+        const isMedStep = step.cats.includes(CAT.medicine);
         const li=document.createElement('li');
-        li.className='step multi'+(anyChecked?' checked':'');
+        li.className='step multi'+(anyChecked?' checked':'')+(isMedStep?' med':'');
         const label=step.label || itemCatLabel(step.cats);
         const note=step.note||'';
         li.innerHTML=`
@@ -1257,7 +1348,8 @@ function renderRoutine(){
               const y=freqBadgeHTML(it.id, true);
               return `<button class="ichip${on?' on':''}" data-uid="${uid}">${shortName(it.id)}${y}${on?`<span class="use-x${n>1?' many':''}" data-x="${uid}">×${n}</span>`:''}</button>`;
             }).join('')}</div>
-            <span class="cat">${step.cats.join('・')}${step.choice?' · どちらか一方':''}</span>
+            <span class="cat">${isMedStep?'💊 ':''}${step.cats.join('・')}${step.choice?' · どちらか一方':''}</span>
+            ${isMedStep?its.map(it=>medElapsedHTML(it.id)).join(''):''}
           </div>`;
         li.querySelectorAll('.ichip').forEach(ch=>{
           ch.onclick=(ev)=>{
