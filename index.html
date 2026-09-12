@@ -208,6 +208,9 @@
   .hist-head .sh{color:var(--accent); font-weight:600;}
   .hist-items{color:var(--ink); line-height:1.7;}
   .hist-del{color:var(--danger-ink); background:none; border:none; font-size:.78rem; cursor:pointer;}
+  /* v0.22：「直す」は押す物だと分かる見た目に。削除と並んでいて見分けられなかった（田畑さん指摘） */
+  .hist-fix{color:#fff; background:var(--accent); border:none; border-radius:999px;
+    font-size:.78rem; font-weight:700; padding:5px 11px; margin-right:8px; cursor:pointer;}
 
   /* ボトル管理 */
   .bottle-row{border-top:1px solid var(--line); padding:10px 2px;}
@@ -403,7 +406,7 @@
 
   <!-- ③ 振り返り -->
   <div class="card">
-    <button class="hist-toggle" id="insightToggle">▸ 振り返り（記録の成果）</button>
+    <button class="hist-toggle" id="insightToggle">▸ 📊 振り返り（今月の集計・直せません）</button>
     <div class="hist-list" id="insightPanel" style="display:none;"></div>
   </div>
 
@@ -421,7 +424,7 @@
 
   <!-- ⑤ ボトル管理は上に移動済み。履歴 -->
   <div class="card">
-    <button class="hist-toggle" id="histToggle">▸ 記録履歴を見る</button>
+    <button class="hist-toggle" id="histToggle">▸ 📅 記録履歴・過去の日を直す</button>
     <div class="hist-list" id="histList" style="display:none;"></div>
   </div>
 
@@ -440,7 +443,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.22 — 過去の日を直すとき、その日に記録した種目が見つけやすくなりました（場所ごとに「✓ この日 N種目」・記録がある場所は自動で開く）。保存済みの角度/傾斜が編集で消えるバグも修正。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.22 — 過去の日を直す入口を分かりやすく（記録履歴の「✏️ この日を直す」1回で、その日の筋トレまで開きます）。保存済みの角度/傾斜が編集で消えるバグも修正。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -1435,6 +1438,10 @@ function renderHistory(){
   const dates=[...new Set([...sLog.map(r=>r.date), ...wLog.map(r=>r.date)])].sort((a,b)=>b.localeCompare(a));
   if(!dates.length){ el.innerHTML='<div class="empty">まだ記録がありません。</div>'; return; }
   el.innerHTML='';
+  /* v0.22：過去の日をどう直すのか画面に書く（「振り返り？履歴？どれ？」＝田畑さん指摘） */
+  const how=document.createElement('div'); how.className='data-note';
+  how.textContent='過去の日を直すには、その日の「✏️ この日を直す」を押す → 画面の上に戻って直す → 各パネルの保存ボタンを押す。';
+  el.appendChild(how);
   if(!openHistMonths) openHistMonths=new Set([todayKey.slice(0,7)]);
 
   // 月ごとに枠を分ける（今月だけ開いた状態・過去月は畳む＝2026-06-26 田畑さんFB）
@@ -1491,7 +1498,7 @@ function renderHistory(){
       <div class="hist-head">
         <span><b>${date}</b> <span class="sh">${tag}</span></span>
         <span>
-          <button class="hist-del" data-e="${date}" style="color:var(--accent);">編集</button>
+          <button class="hist-fix" data-e="${date}">✏️ この日を直す</button>
           <button class="hist-del" data-d="${date}">削除</button>
         </span>
       </div>
@@ -1501,8 +1508,14 @@ function renderHistory(){
   });
   el.querySelectorAll('[data-e]').forEach(btn=>{
     btn.onclick=()=>{
-      loadStateFor(btn.getAttribute('data-e'));
+      const d=btn.getAttribute('data-e');
+      loadStateFor(d);
       renderAll();
+      /* v0.22：その日に筋トレの記録があるなら 💪 も開いておく。
+         理由＝「直す」を押しても筋トレは畳まれたままで、自分で探し当てる必要があった。 */
+      if(getWorkout(d) && document.getElementById('workoutPanel').style.display==='none'){
+        document.getElementById('workoutToggle').click();
+      }
       window.scrollTo(0,0);
     };
   });
@@ -2192,10 +2205,10 @@ function wireToggle(btnId, panelId, title, onOpen){
   };
 }
 wireToggle('workoutToggle','workoutPanel','💪 筋トレ・ランニングを記録',renderWorkout);
-wireToggle('insightToggle','insightPanel','振り返り（記録の成果）',renderInsights);
+wireToggle('insightToggle','insightPanel','📊 振り返り（今月の集計・直せません）',renderInsights);
 wireToggle('itemsToggle','itemsPanel','マイアイテム（登録・編集）',renderItems);
 wireToggle('bottleToggle','bottleList','ボトル管理（買い足しタイマー）',renderBottles);
-wireToggle('histToggle','histList','記録履歴を見る',renderHistory);
+wireToggle('histToggle','histList','📅 記録履歴・過去の日を直す',renderHistory);
 wireToggle('dataToggle','dataPanel','データ管理（バックアップ）');
 
 document.getElementById('exportBtn').onclick=exportBackup;
