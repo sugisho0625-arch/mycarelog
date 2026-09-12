@@ -294,6 +294,9 @@
     color:var(--ink); cursor:pointer;
   }
   .wk-place.open{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+  /* v0.22：その日に記録がある場所は、畳んでいても分かるように縁を付ける */
+  .wk-place.has{ border-color:var(--accent); }
+  .wk-place.has .sub{ color:var(--accent); font-weight:700; }
   .wk-place .sub{ font-size:.72rem; font-weight:600; color:var(--sub); white-space:nowrap; }
   .wk-part:first-child{margin-top:4px;}
   .wk-ex{
@@ -437,7 +440,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.21 — ランニングマシンに傾斜(%)欄を追加。種目名の横に部位（押す/引く/体幹/脚）を表示＝同名の別マシンを見分けられるように。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.22 — 過去の日を直すとき、その日に記録した種目が見つけやすくなりました（場所ごとに「✓ この日 N種目」・記録がある場所は自動で開く）。保存済みの角度/傾斜が編集で消えるバグも修正。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -1760,15 +1763,35 @@ function renderInsightsIfOpen(){
    =========================================================== */
 /* v0.20：最後に開いていた区分を記憶（現場でセンターを開き直す手間を省く）。端末内保存・記録データには入らない */
 const LS_WK_PLACE='mcl_wk_place';
-let wstate = { date:null, picked:{}, memo:'', dirty:false, editing:false, openPlace:(localStorage.getItem(LS_WK_PLACE)||'home') };
+let wstate = { date:null, picked:{}, memo:'', dirty:false, editing:false, openPlaces:new Set([localStorage.getItem(LS_WK_PLACE)||'home']) };
 
 function syncWorkout(date){
   wstate.date=date; wstate.picked={}; wstate.memo=''; wstate.dirty=false;
   const rec=getWorkout(date);
   if(rec){
-    (rec.entries||[]).forEach(e=>{ wstate.picked[e.exId]={sets:e.sets, amount:e.amount, weight:e.weight, minutes:e.minutes}; });
+    /* v0.22 修正：angle(v0.20)・incline(v0.21) を読み落としていた＝保存済みの角度/傾斜が編集し直すと消えていた */
+    (rec.entries||[]).forEach(e=>{ wstate.picked[e.exId]={sets:e.sets, amount:e.amount, weight:e.weight, minutes:e.minutes, angle:e.angle, incline:e.incline}; });
     wstate.memo=rec.memo||'';
   }
+  /* v0.22：その日に記録がある場所を自動で開く。
+     理由＝過去日を編集するとき、最後に開いた場所（宅トレ等）だけが開き、
+     実際に記録したセンターの種目が畳まれたままで「どれを記録したか」が見えなかった。 */
+  const has=placesWithRecords();
+  wstate.openPlaces = has.size ? has : new Set([localStorage.getItem(LS_WK_PLACE)||'home']);
+}
+
+/* その日に記録がある場所（home/center/run）の集合 */
+function placesWithRecords(){
+  const set=new Set();
+  Object.keys(wstate.picked).forEach(id=>{ const ex=exById(id); if(ex) set.add(ex.place||'home'); });
+  return set;
+}
+
+/* その日に記録がある種目の数（場所ごと） */
+function countByPlace(){
+  const c={};
+  Object.keys(wstate.picked).forEach(id=>{ const ex=exById(id); if(!ex) return; const p=ex.place||'home'; c[p]=(c[p]||0)+1; });
+  return c;
 }
 
 function workoutSummary(rec){
@@ -1795,23 +1818,38 @@ function renderWorkout(){
   const dayWord = state.editDate===todayKey ? '今日' : dayLabelOf(state.editDate);
   const intro=document.createElement('div');
   intro.className='data-note';
-  intro.textContent=`${dayWord}やった種目をタップ → 回数・セットを記録（スキンケアとは別に保存）。`;
+  /* v0.22：過去日を編集するとき「この日どれを記録したか」を先に言う（全種目が並ぶので迷子になる） */
+  const pickedN=Object.keys(wstate.picked).length;
+  intro.textContent = pickedN
+    ? `${dayWord}の記録＝✓が付いている ${pickedN}種目。ほかは記録していません。タップで追加/取り消し。`
+    : `${dayWord}やった種目をタップ → 回数・セットを記録（スキンケアとは別に保存）。`;
   el.appendChild(intro);
 
   const exs=activeExercises();
+  const cnt=countByPlace();
   /* v0.17：場所ごとに大きく分ける（普段は片方しか使わないので、開いている方だけ表示）。
      部位(part)はデータとして保持＝集計時に押す/引くのバランス分析ができる */
   WK_PLACES.forEach(pl=>{
     const inPlace=exs.filter(e=>(e.place||'home')===pl.id);
     if(!inPlace.length) return;
-    const open = wstate.openPlace===pl.id;
+    const open = wstate.openPlaces.has(pl.id);
+    const n = cnt[pl.id]||0;   // v0.22：この日ここに記録した種目の数
     const head=document.createElement('button');
-    head.className='wk-place'+(open?' open':'');
-    head.innerHTML=`<span>${open?'▾':'▸'} ${pl.label}</span><span class="sub">${pl.sub}</span>`;
-    head.onclick=()=>{ wstate.openPlace = open ? null : pl.id; if(wstate.openPlace) localStorage.setItem(LS_WK_PLACE, wstate.openPlace); renderWorkout(); };
+    head.className='wk-place'+(open?' open':'')+(n?' has':'');
+    head.innerHTML=`<span>${open?'▾':'▸'} ${pl.label}</span><span class="sub">${n?`✓ この日 ${n}種目`:pl.sub}</span>`;
+    head.onclick=()=>{
+      if(open) wstate.openPlaces.delete(pl.id);
+      else { wstate.openPlaces.add(pl.id); localStorage.setItem(LS_WK_PLACE, pl.id); }
+      renderWorkout();
+    };
     el.appendChild(head);
     if(!open) return;
-    inPlace.forEach(ex=>el.appendChild(buildExerciseRow(ex)));
+    /* v0.22：過去の日を直すときだけ、記録した種目を上にまとめる。
+       理由＝全種目が並ぶので「この日どれを記録したか」が探しづらい（田畑さん指摘）。
+       今日の記録中は並べ替えない＝タップするたび行が動くと押し間違える。 */
+    const rows = state.editDate===todayKey ? inPlace
+      : inPlace.slice().sort((a,b)=>(wstate.picked[b.id]?1:0)-(wstate.picked[a.id]?1:0));
+    rows.forEach(ex=>el.appendChild(buildExerciseRow(ex)));
   });
 
 
@@ -1909,7 +1947,7 @@ function buildExerciseRow(ex){
   // ヘッダタップ＝ON/OFF
   row.querySelector('.wk-head').onclick=()=>{
     if(wstate.picked[ex.id]) delete wstate.picked[ex.id];
-    else { const d=exDefaultValue(ex.id); const o={sets:d.sets, amount:d.amount}; if(useW) o.weight=d.weight; if(useM) o.minutes=d.minutes; if(useA) o.angle=d.angle; wstate.picked[ex.id]=o; }
+    else { const d=exDefaultValue(ex.id); const o={sets:d.sets, amount:d.amount}; if(useW) o.weight=d.weight; if(useM) o.minutes=d.minutes; if(useA) o.angle=d.angle; if(useI) o.incline=d.incline; wstate.picked[ex.id]=o; }
     wstate.dirty=true;
     renderWorkout();
   };
