@@ -304,6 +304,14 @@
   .wk-head{display:flex; align-items:center; gap:11px; padding:11px 12px; cursor:pointer;}
   .wk-name{flex:1; font-size:.93rem; font-weight:600;}
   .wk-ex.on .wk-name{color:var(--ink);}
+  /* v0.21：部位(押す/引く/体幹/脚)を種目名の横に出す。
+     登録時にカテゴリー分けしても画面に出ておらず、同じ名前の別マシン（例：「腕」の押す/引く）が
+     見分けられなかったため（2026-09-13 田畑さん指摘）。 */
+  .wk-part{
+    display:inline-block; margin-left:7px; padding:1px 7px; border-radius:6px;
+    font-size:.64rem; font-weight:700; vertical-align:2px;
+    color:var(--accent); background:var(--accent-soft); border:1px solid #d3e2f0;
+  }
   .wk-set-summary{flex:0 0 auto; font-size:.78rem; color:var(--done); font-weight:700;}
   .wk-stephint{ display:inline-block; margin-left:5px; font-size:.62rem; color:var(--sub); font-weight:600; }
   .wk-controls{padding:0 12px 12px; display:none;}
@@ -429,7 +437,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.20 — 運動の区分を「宅トレ／センター／ランニング」の3つに整理。ロータリートルソーに角度欄、レンジの違うマシンは1kg刻み。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.21 — ランニングマシンに傾斜(%)欄を追加。種目名の横に部位（押す/引く/体幹/脚）を表示＝同名の別マシンを見分けられるように。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -527,8 +535,11 @@ const DEFAULT_EXERCISES = [
   {id:'c_abdominal',name:'アブドミナルクランチ',   place:'center', part:'体幹', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
   /* ロータリートルソー＝捻りの角度も記録（v0.20・田畑さん要望）。段階式のマシンだが段階は未確認＝当面5°刻みの自由入力・初期値は本人の実測70° */
   {id:'c_torso',    name:'ロータリートルソー',     place:'center', part:'体幹', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20, useAngle:true, defAngle:70},
-  /* ランニングマシン＝距離(m)＋時間(分)。平均速度は距離÷時間で後から算出可・傾斜/カロリーはメモ運用（2026-08-30 田畑さん選択） */
-  {id:'c_treadmill',name:'ランニングマシン',       place:'run',    part:'脚',   unit:'m', defAmount:3000, defSets:1, useMinutes:true, defMinutes:20},
+  /* ランニングマシン＝距離(m)＋時間(分)＋傾斜(%)。平均速度は距離÷時間で後から算出可。
+     🔴傾斜を足した理由（v0.21・2026-09-13）＝2026-08-30には「入力が重くなる」としてメモ運用にしたが、
+     屋外→マシンで**気温という負荷の変数が消えた**ため、傾斜が残る唯一の負荷条件になった。
+     メモに書いてもらう運用を提案したが、それは道具側の仕事＝アプリで受ける。カロリーは機種推定で比較できないので入れない。 */
+  {id:'c_treadmill',name:'ランニングマシン',       place:'run',    part:'脚',   unit:'m', defAmount:3000, defSets:1, useMinutes:true, defMinutes:20, useIncline:true, defIncline:0},
 ];
 
 const SHIFTS = [
@@ -822,6 +833,9 @@ function newItemId(){ return 'u'+Date.now().toString(36)+Math.floor(Math.random(
   // v0.20：ロータリートルソーに角度欄を補完
   const rt=a.find(e=>e.id==='c_torso');
   if(rt && !rt.useAngle){ rt.useAngle=true; rt.defAngle=70; changed=true; }
+  // v0.21：ランニングマシンに傾斜(%)欄を補完
+  const tm2=a.find(e=>e.id==='c_treadmill');
+  if(tm2 && !tm2.useIncline){ tm2.useIncline=true; tm2.defIncline=0; changed=true; }
   // v0.20：ラットプルダウン／シーテッドロウ（本人がスマホで追加済み）は重量のレンジがMATRIX表と違う＝1kg刻みへ。
   //  名前で判定（IDは端末生成のため不明）。外れた場合は編集画面の「重量の刻み」で切替可能。
   a.forEach(e=>{ if(e.useWeight && e.weightStep==null && /ラットプル|シーテッド/.test(e.name||'')){ e.weightStep=1; changed=true; } });
@@ -873,10 +887,10 @@ function exDefaultValue(exId){
   const ex0=exById(exId);
   if(recs.length){
     const e=recs[0].entries.find(x=>x.exId===exId);
-    return {sets:e.sets, amount:e.amount, weight:(e.weight!=null?e.weight:(ex0?ex0.defWeight:null)), minutes:(e.minutes!=null?e.minutes:(ex0?ex0.defMinutes:null)), angle:(e.angle!=null?e.angle:(ex0?ex0.defAngle:null))};
+    return {sets:e.sets, amount:e.amount, weight:(e.weight!=null?e.weight:(ex0?ex0.defWeight:null)), minutes:(e.minutes!=null?e.minutes:(ex0?ex0.defMinutes:null)), angle:(e.angle!=null?e.angle:(ex0?ex0.defAngle:null)), incline:(e.incline!=null?e.incline:(ex0?ex0.defIncline:null))};
   }
   const ex=ex0;
-  return {sets:ex?ex.defSets:3, amount:ex?ex.defAmount:10, weight:ex?ex.defWeight:null, minutes:ex?ex.defMinutes:null, angle:ex?ex.defAngle:null};
+  return {sets:ex?ex.defSets:3, amount:ex?ex.defAmount:10, weight:ex?ex.defWeight:null, minutes:ex?ex.defMinutes:null, angle:ex?ex.defAngle:null, incline:ex?ex.defIncline:null};
 }
 
 /* ===========================================================
@@ -1766,7 +1780,8 @@ function workoutSummary(rec){
     const w = e.weight!=null ? `${e.weight}kg×` : '';   // マシン種目は重量を先頭に
     const mi = e.minutes!=null ? ` / ${e.minutes}分` : '';  // ランニングマシンは時間を併記
     const an = e.angle!=null ? ` / ${e.angle}°` : '';     // ロータリートルソーは角度を併記（v0.20）
-    return `${nm} ${w}${e.amount}${unit}${mi}${e.sets>1?'×'+e.sets:''}${an}`;  // 1セットは「×1」を省略（ラン 5300m 等）
+    const inc = e.incline ? ` / 傾斜${e.incline}%` : '';  // ランニングマシンは傾斜を併記（v0.21・0は出さない）
+    return `${nm} ${w}${e.amount}${unit}${mi}${inc}${e.sets>1?'×'+e.sets:''}${an}`;  // 1セットは「×1」を省略（ラン 5300m 等）
   });
 }
 
@@ -1832,6 +1847,7 @@ function buildExerciseRow(ex){
   const weight=picked&&picked.weight!=null?picked.weight:def.weight;
   const minutes=picked&&picked.minutes!=null?picked.minutes:def.minutes;
   const angle=picked&&picked.angle!=null?picked.angle:def.angle;
+  const incline=picked&&picked.incline!=null?picked.incline:def.incline;
   const row=document.createElement('div');
   row.className='wk-ex'+(on?' on':'');
   const step=ex.unit==='m'?100:(ex.unit==='秒'?5:1);
@@ -1839,11 +1855,12 @@ function buildExerciseRow(ex){
   const useW = !!ex.useWeight;   // v0.17：マシン種目のみ重量(kg)入力を出す（MATRIX＝4.5kg刻み）
   const useM = !!ex.useMinutes;  // v0.17.1：ランニングマシンのみ時間(分)入力を出す
   const useA = !!ex.useAngle;    // v0.20：ロータリートルソーの捻り角度(°)
+  const useI = !!ex.useIncline;  // v0.21：ランニングマシンの傾斜(%)
   row.innerHTML=`
     <div class="wk-head">
       <div class="box">${on?'✓':''}</div>
-      <div class="wk-name">${ex.name}</div>
-      ${on&&!checkOnly?`<div class="wk-set-summary">${useW&&weight?weight+'kg×':''}${amount}${ex.unit}${useM&&minutes?' / '+minutes+'分':''}${sets>1?'×'+sets:''}${useA&&angle!=null?' / '+angle+'°':''}</div>`:''}
+      <div class="wk-name">${ex.name}${ex.part&&ex.unit!=='m'?`<span class="wk-part">${ex.part}</span>`:''}</div>
+      ${on&&!checkOnly?`<div class="wk-set-summary">${useW&&weight?weight+'kg×':''}${amount}${ex.unit}${useM&&minutes?' / '+minutes+'分':''}${sets>1?'×'+sets:''}${useA&&angle!=null?' / '+angle+'°':''}${useI&&incline?' / 傾斜'+incline+'%':''}</div>`:''}
     </div>
     ${checkOnly?'':`<div class="wk-controls">
       ${useW?`<div class="wk-ctl-row">
@@ -1872,6 +1889,13 @@ function buildExerciseRow(ex){
         <div class="stepper" data-f="minutes">
           <button data-d="-1">−</button><span class="val">${minutes}</span><button data-d="1">＋</button>
           <span class="unit">分</span>
+        </div>
+      </div>`:''}
+      ${useI?`<div class="wk-ctl-row">
+        <span class="clbl">傾斜</span>
+        <div class="stepper" data-f="incline">
+          <button data-d="-1">−</button><span class="val">${incline}</span><button data-d="1">＋</button>
+          <span class="unit">%<small class="wk-stephint">0.5刻み・使わない日は0のまま</small></span>
         </div>
       </div>`:''}
       <div class="wk-ctl-row">
@@ -1903,6 +1927,9 @@ function buildExerciseRow(ex){
           cur.weight=Math.max(0,(cur.weight||0)+dir);
         }else if(field==='angle'){
           cur.angle=Math.max(0,(cur.angle||0)+dir*5);   // 5°刻み（段階が判明したら選択式へ）
+        }else if(field==='incline'){
+          // v0.21：傾斜は0.5%刻み（小数の誤差が出ないよう10倍して丸める）
+          cur.incline=Math.max(0, Math.round(((cur.incline||0)+dir*0.5)*10)/10);
         }else if(field==='weight'){
           // 実物のプレートを1段ずつ移動（等間隔でないため）
           let i=WEIGHT_STACK.indexOf(cur.weight);
@@ -1930,7 +1957,7 @@ function updateWorkoutSaveBtn(){
 }
 
 function saveWorkout(){
-  const entries=Object.entries(wstate.picked).map(([exId,v])=>({exId, sets:v.sets, amount:v.amount, ...(v.weight!=null?{weight:v.weight}:{}), ...(v.minutes!=null?{minutes:v.minutes}:{}), ...(v.angle!=null?{angle:v.angle}:{})}));
+  const entries=Object.entries(wstate.picked).map(([exId,v])=>({exId, sets:v.sets, amount:v.amount, ...(v.weight!=null?{weight:v.weight}:{}), ...(v.minutes!=null?{minutes:v.minutes}:{}), ...(v.angle!=null?{angle:v.angle}:{}), ...(v.incline?{incline:v.incline}:{})}));
   if(!entries.length && !wstate.memo){
     // 空保存＝その日の筋トレ記録を消す
     saveWorkoutLog(loadWorkoutLog().filter(r=>r.date!==state.editDate));
