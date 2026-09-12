@@ -305,6 +305,7 @@
   .wk-name{flex:1; font-size:.93rem; font-weight:600;}
   .wk-ex.on .wk-name{color:var(--ink);}
   .wk-set-summary{flex:0 0 auto; font-size:.78rem; color:var(--done); font-weight:700;}
+  .wk-stephint{ display:inline-block; margin-left:5px; font-size:.62rem; color:var(--sub); font-weight:600; }
   .wk-controls{padding:0 12px 12px; display:none;}
   .wk-ex.on .wk-controls{display:block;}
   .wk-ctl-row{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 0;}
@@ -385,7 +386,7 @@
 
   <!-- 💪 筋トレ記録（スキンケアとは独立・単独で保存） -->
   <div class="card" style="margin-top:18px;">
-    <button class="hist-toggle" id="workoutToggle">▸ 💪 筋トレを記録</button>
+    <button class="hist-toggle" id="workoutToggle">▸ 💪 筋トレ・ランニングを記録</button>
     <div class="hist-list" id="workoutPanel" style="display:none;"></div>
   </div>
 
@@ -428,7 +429,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.19.1 — 服薬の枠を色分け（紫）＋前回塗布からの経過時間。開いたまま日付をまたいでも今日に切り替わるよう修正。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.20 — 運動の区分を「宅トレ／センター／ランニング」の3つに整理。ロータリートルソーに角度欄、レンジの違うマシンは1kg刻み。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -493,9 +494,13 @@ const FREQ_HIGHLIGHT = ['retinol','device','washFancl','cleanseOil','besselna'];
 const WK_PARTS = ['押す','引く','体幹','脚'];
 /* 場所（v0.17・2026-08-30）：転居で二重生活に＝春日井（帰省時）は宅トレ／品川は健康センター。
    画面は場所で大きく分ける（普段は片方しか使わない）。部位(part)はデータとして保持＝集計時に分析できる。 */
+/* v0.20（2026-09-12・田畑さん提案）：ランニングは筋トレの分類と性質が違う＝場所ではなく独立した区分に。
+   屋外ラン(running)もランニングマシン(c_treadmill)もここ。種目IDは別のままなので集計での比較は従来どおり可能。
+   フィールド名 place は互換のため据え置き（意味は「場所」から「区分」へ）。 */
 const WK_PLACES = [
-  {id:'home',   label:'🏠 宅トレ',   sub:'自重・回数のみ'},
-  {id:'center', label:'🏋️ センター', sub:'マシン・重量×回数'},
+  {id:'home',   label:'🏠 宅トレ',     sub:'自重・回数のみ'},
+  {id:'center', label:'🏋️ センター',   sub:'マシン・重量×回数'},
+  {id:'run',    label:'🏃 ランニング', sub:'屋外・マシン'},
 ];
 /* MATRIXマシンのウェイト実測値（写真確認・2026-08-30）。lbs表記を丸めたkg値＝等間隔でないため実プレートを列挙 */
 const WEIGHT_STACK = [4.5,9,14,18,23,27,32,36,41,45,50,54,59,64,68,73,77,82,86,91,95,100,104];
@@ -514,15 +519,16 @@ const DEFAULT_EXERCISES = [
   {id:'inverted_row_un',name:'斜め懸垂（逆手）',                place:'home', part:'引く', unit:'回', defAmount:5,  defSets:3},
   {id:'back_ext',      name:'背筋（スーパーマン・5秒キープ）',  place:'home', part:'引く', unit:'回', defAmount:10, defSets:3},
   /* ランニング＝距離(m)を直接記録（コース非依存＝引っ越しても単位が生きる）。±100mステップ・前回値が初期値 */
-  {id:'running',       name:'ランニング',                     place:'home', part:'脚', unit:'m', defAmount:5300, defSets:1},
+  {id:'running',       name:'ランニング（屋外）',              place:'run',  part:'脚', unit:'m', defAmount:5300, defSets:1},
   /* 健康センター（品川・2026-08-30〜1か月試行）＝MATRIXマシン。重量は4.5kg刻み → kg入力あり（useWeight）。
      ※バックエクステンションは宅トレのback_extと同種目＝場所で分けて記録し、集計時に比較できる */
   {id:'c_chest',    name:'チェストプレス',        place:'center', part:'押す', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
   {id:'c_backext',  name:'バックエクステンション', place:'center', part:'引く', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
   {id:'c_abdominal',name:'アブドミナルクランチ',   place:'center', part:'体幹', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
-  {id:'c_torso',    name:'ロータリートルソー',     place:'center', part:'体幹', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
+  /* ロータリートルソー＝捻りの角度も記録（v0.20・田畑さん要望）。段階式のマシンだが段階は未確認＝当面5°刻みの自由入力・初期値は本人の実測70° */
+  {id:'c_torso',    name:'ロータリートルソー',     place:'center', part:'体幹', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20, useAngle:true, defAngle:70},
   /* ランニングマシン＝距離(m)＋時間(分)。平均速度は距離÷時間で後から算出可・傾斜/カロリーはメモ運用（2026-08-30 田畑さん選択） */
-  {id:'c_treadmill',name:'ランニングマシン',       place:'center', part:'脚',   unit:'m', defAmount:3000, defSets:1, useMinutes:true, defMinutes:20},
+  {id:'c_treadmill',name:'ランニングマシン',       place:'run',    part:'脚',   unit:'m', defAmount:3000, defSets:1, useMinutes:true, defMinutes:20},
 ];
 
 const SHIFTS = [
@@ -809,6 +815,16 @@ function newItemId(){ return 'u'+Date.now().toString(36)+Math.floor(Math.random(
     const used=loadWorkoutLog().some(r=>(r.entries||[]).some(e=>e.exId==='c_pull'));
     if(!used){ a.splice(pi,1); changed=true; }
   }
+  // v0.20：ランニング2種目を「🏃 ランニング」区分へ移す（ユーザー追加種目は触らない＝編集画面で自分で移せる）
+  ['running','c_treadmill'].forEach(id=>{ const e=a.find(x=>x.id===id); if(e && e.place!=='run'){ e.place='run'; changed=true; } });
+  const rn=a.find(e=>e.id==='running');
+  if(rn && rn.name==='ランニング'){ rn.name='ランニング（屋外）'; changed=true; }   // 区分内でマシンと並ぶため（本人改名済みなら触らない）
+  // v0.20：ロータリートルソーに角度欄を補完
+  const rt=a.find(e=>e.id==='c_torso');
+  if(rt && !rt.useAngle){ rt.useAngle=true; rt.defAngle=70; changed=true; }
+  // v0.20：ラットプルダウン／シーテッドロウ（本人がスマホで追加済み）は重量のレンジがMATRIX表と違う＝1kg刻みへ。
+  //  名前で判定（IDは端末生成のため不明）。外れた場合は編集画面の「重量の刻み」で切替可能。
+  a.forEach(e=>{ if(e.useWeight && e.weightStep==null && /ラットプル|シーテッド/.test(e.name||'')){ e.weightStep=1; changed=true; } });
   if(changed) localStorage.setItem(LS_EXERCISES, JSON.stringify(a));
 })();
 function allExercises(){ try{return JSON.parse(localStorage.getItem(LS_EXERCISES))||[];}catch(e){return [];} }
@@ -857,10 +873,10 @@ function exDefaultValue(exId){
   const ex0=exById(exId);
   if(recs.length){
     const e=recs[0].entries.find(x=>x.exId===exId);
-    return {sets:e.sets, amount:e.amount, weight:(e.weight!=null?e.weight:(ex0?ex0.defWeight:null)), minutes:(e.minutes!=null?e.minutes:(ex0?ex0.defMinutes:null))};
+    return {sets:e.sets, amount:e.amount, weight:(e.weight!=null?e.weight:(ex0?ex0.defWeight:null)), minutes:(e.minutes!=null?e.minutes:(ex0?ex0.defMinutes:null)), angle:(e.angle!=null?e.angle:(ex0?ex0.defAngle:null))};
   }
   const ex=ex0;
-  return {sets:ex?ex.defSets:3, amount:ex?ex.defAmount:10, weight:ex?ex.defWeight:null, minutes:ex?ex.defMinutes:null};
+  return {sets:ex?ex.defSets:3, amount:ex?ex.defAmount:10, weight:ex?ex.defWeight:null, minutes:ex?ex.defMinutes:null, angle:ex?ex.defAngle:null};
 }
 
 /* ===========================================================
@@ -1728,7 +1744,9 @@ function renderInsightsIfOpen(){
 /* ===========================================================
    筋トレ記録（スキンケアとは独立・editDate に追従）
    =========================================================== */
-let wstate = { date:null, picked:{}, memo:'', dirty:false, editing:false, openPlace:'home' };
+/* v0.20：最後に開いていた区分を記憶（現場でセンターを開き直す手間を省く）。端末内保存・記録データには入らない */
+const LS_WK_PLACE='mcl_wk_place';
+let wstate = { date:null, picked:{}, memo:'', dirty:false, editing:false, openPlace:(localStorage.getItem(LS_WK_PLACE)||'home') };
 
 function syncWorkout(date){
   wstate.date=date; wstate.picked={}; wstate.memo=''; wstate.dirty=false;
@@ -1747,7 +1765,8 @@ function workoutSummary(rec){
     if(unit==='✓') return nm;  // チェック式＝名前だけ（回数×セットなし）
     const w = e.weight!=null ? `${e.weight}kg×` : '';   // マシン種目は重量を先頭に
     const mi = e.minutes!=null ? ` / ${e.minutes}分` : '';  // ランニングマシンは時間を併記
-    return `${nm} ${w}${e.amount}${unit}${mi}${e.sets>1?'×'+e.sets:''}`;  // 1セットは「×1」を省略（ラン 5300m 等）
+    const an = e.angle!=null ? ` / ${e.angle}°` : '';     // ロータリートルソーは角度を併記（v0.20）
+    return `${nm} ${w}${e.amount}${unit}${mi}${e.sets>1?'×'+e.sets:''}${an}`;  // 1セットは「×1」を省略（ラン 5300m 等）
   });
 }
 
@@ -1774,7 +1793,7 @@ function renderWorkout(){
     const head=document.createElement('button');
     head.className='wk-place'+(open?' open':'');
     head.innerHTML=`<span>${open?'▾':'▸'} ${pl.label}</span><span class="sub">${pl.sub}</span>`;
-    head.onclick=()=>{ wstate.openPlace = open ? null : pl.id; renderWorkout(); };
+    head.onclick=()=>{ wstate.openPlace = open ? null : pl.id; if(wstate.openPlace) localStorage.setItem(LS_WK_PLACE, wstate.openPlace); renderWorkout(); };
     el.appendChild(head);
     if(!open) return;
     inPlace.forEach(ex=>el.appendChild(buildExerciseRow(ex)));
@@ -1812,24 +1831,33 @@ function buildExerciseRow(ex){
   const amount=picked?picked.amount:def.amount;
   const weight=picked&&picked.weight!=null?picked.weight:def.weight;
   const minutes=picked&&picked.minutes!=null?picked.minutes:def.minutes;
+  const angle=picked&&picked.angle!=null?picked.angle:def.angle;
   const row=document.createElement('div');
   row.className='wk-ex'+(on?' on':'');
   const step=ex.unit==='m'?100:(ex.unit==='秒'?5:1);
   const checkOnly = ex.unit==='✓';
   const useW = !!ex.useWeight;   // v0.17：マシン種目のみ重量(kg)入力を出す（MATRIX＝4.5kg刻み）
   const useM = !!ex.useMinutes;  // v0.17.1：ランニングマシンのみ時間(分)入力を出す
+  const useA = !!ex.useAngle;    // v0.20：ロータリートルソーの捻り角度(°)
   row.innerHTML=`
     <div class="wk-head">
       <div class="box">${on?'✓':''}</div>
       <div class="wk-name">${ex.name}</div>
-      ${on&&!checkOnly?`<div class="wk-set-summary">${useW&&weight?weight+'kg×':''}${amount}${ex.unit}${useM&&minutes?' / '+minutes+'分':''}${sets>1?'×'+sets:''}</div>`:''}
+      ${on&&!checkOnly?`<div class="wk-set-summary">${useW&&weight?weight+'kg×':''}${amount}${ex.unit}${useM&&minutes?' / '+minutes+'分':''}${sets>1?'×'+sets:''}${useA&&angle!=null?' / '+angle+'°':''}</div>`:''}
     </div>
     ${checkOnly?'':`<div class="wk-controls">
       ${useW?`<div class="wk-ctl-row">
         <span class="clbl">重量</span>
         <div class="stepper" data-f="weight">
           <button data-d="-1">−</button><span class="val">${weight}</span><button data-d="1">＋</button>
-          <span class="unit">kg</span>
+          <span class="unit">kg${ex.weightStep===1?'<small class="wk-stephint">1kg刻み</small>':''}</span>
+        </div>
+      </div>`:''}
+      ${useA?`<div class="wk-ctl-row">
+        <span class="clbl">角度</span>
+        <div class="stepper" data-f="angle">
+          <button data-d="-1">−</button><span class="val">${angle}</span><button data-d="1">＋</button>
+          <span class="unit">°</span>
         </div>
       </div>`:''}
       <div class="wk-ctl-row">
@@ -1857,7 +1885,7 @@ function buildExerciseRow(ex){
   // ヘッダタップ＝ON/OFF
   row.querySelector('.wk-head').onclick=()=>{
     if(wstate.picked[ex.id]) delete wstate.picked[ex.id];
-    else { const d=exDefaultValue(ex.id); const o={sets:d.sets, amount:d.amount}; if(useW) o.weight=d.weight; if(useM) o.minutes=d.minutes; wstate.picked[ex.id]=o; }
+    else { const d=exDefaultValue(ex.id); const o={sets:d.sets, amount:d.amount}; if(useW) o.weight=d.weight; if(useM) o.minutes=d.minutes; if(useA) o.angle=d.angle; wstate.picked[ex.id]=o; }
     wstate.dirty=true;
     renderWorkout();
   };
@@ -1870,7 +1898,12 @@ function buildExerciseRow(ex){
         if(!wstate.picked[ex.id]) return;
         const dir=Number(b.getAttribute('data-d'));
         const cur=wstate.picked[ex.id];
-        if(field==='weight'){
+        if(field==='weight' && ex.weightStep===1){
+          // v0.20：レンジがMATRIX表と違うマシン（ラットプルダウン等）は1kgずつ
+          cur.weight=Math.max(0,(cur.weight||0)+dir);
+        }else if(field==='angle'){
+          cur.angle=Math.max(0,(cur.angle||0)+dir*5);   // 5°刻み（段階が判明したら選択式へ）
+        }else if(field==='weight'){
           // 実物のプレートを1段ずつ移動（等間隔でないため）
           let i=WEIGHT_STACK.indexOf(cur.weight);
           if(i<0){ i=WEIGHT_STACK.findIndex(w=>w>=cur.weight); if(i<0) i=WEIGHT_STACK.length-1; }
@@ -1897,7 +1930,7 @@ function updateWorkoutSaveBtn(){
 }
 
 function saveWorkout(){
-  const entries=Object.entries(wstate.picked).map(([exId,v])=>({exId, sets:v.sets, amount:v.amount, ...(v.weight!=null?{weight:v.weight}:{}), ...(v.minutes!=null?{minutes:v.minutes}:{})}));
+  const entries=Object.entries(wstate.picked).map(([exId,v])=>({exId, sets:v.sets, amount:v.amount, ...(v.weight!=null?{weight:v.weight}:{}), ...(v.minutes!=null?{minutes:v.minutes}:{}), ...(v.angle!=null?{angle:v.angle}:{})}));
   if(!entries.length && !wstate.memo){
     // 空保存＝その日の筋トレ記録を消す
     saveWorkoutLog(loadWorkoutLog().filter(r=>r.date!==state.editDate));
@@ -1952,11 +1985,13 @@ function buildExForm(ex){
   f.innerHTML=`
     <label>種目名 *</label>
     <input type="text" id="exName" value="${ex?ex.name.replace(/"/g,'&quot;'):''}" placeholder="例：ディップス">
-    <label>場所</label>
+    <label>種類（宅トレ／センター／ランニング）</label>
     <select id="exPlace">${WK_PLACES.map(p=>`<option value="${p.id}"${ex&&(ex.place||'home')===p.id?' selected':''}>${p.label}</option>`).join('')}</select>
     <label>区分（集計用）</label>
     <select id="exPart">${WK_PARTS.map(p=>`<option${ex&&ex.part===p?' selected':''}>${p}</option>`).join('')}</select>
     <label><input type="checkbox" id="exUseW"${ex&&ex.useWeight?' checked':''} style="width:auto;margin-right:6px;vertical-align:-1px;">重量(kg)を記録する（マシン種目）</label>
+    <label>重量の刻み（重量を記録する種目のみ）</label>
+    <select id="exWStep"><option value="stack"${!(ex&&ex.weightStep===1)?' selected':''}>MATRIXのプレート表（4.5→9→14→18…）</option><option value="1"${ex&&ex.weightStep===1?' selected':''}>1kgずつ（レンジが違うマシン）</option></select>
     <label><input type="checkbox" id="exUseM"${ex&&ex.useMinutes?' checked':''} style="width:auto;margin-right:6px;vertical-align:-1px;">時間(分)を記録する（有酸素マシン）</label>
     <label>単位</label>
     <select id="exUnit"><option${ex&&ex.unit==='回'?' selected':''}>回</option><option${ex&&ex.unit==='秒'?' selected':''}>秒</option><option value="m"${ex&&ex.unit==='m'?' selected':''}>m（距離）</option><option value="✓"${ex&&ex.unit==='✓'?' selected':''}>✓（やった/やらなかっただけ）</option></select>
@@ -1977,7 +2012,7 @@ function buildExForm(ex){
     const data={place:f.querySelector('#exPlace').value, part:f.querySelector('#exPart').value, unit:f.querySelector('#exUnit').value,
       defAmount:Math.max(1,Number(f.querySelector('#exAmount').value)||10),
       defSets:Math.max(1,Number(f.querySelector('#exSets').value)||3),
-      useWeight:uw, ...(uw?{defWeight:(ex&&ex.defWeight)||20}:{}),
+      useWeight:uw, ...(uw?{defWeight:(ex&&ex.defWeight)||20, weightStep:(f.querySelector('#exWStep').value==='1'?1:null)}:{}),
       useMinutes:um, ...(um?{defMinutes:(ex&&ex.defMinutes)||20}:{})};
     const arr=allExercises();
     if(ex){ Object.assign(arr.find(x=>x.id===ex.id), {name, ...data}); }
@@ -2091,7 +2126,7 @@ function wireToggle(btnId, panelId, title, onOpen){
     if(!open && onOpen) onOpen();
   };
 }
-wireToggle('workoutToggle','workoutPanel','💪 筋トレを記録',renderWorkout);
+wireToggle('workoutToggle','workoutPanel','💪 筋トレ・ランニングを記録',renderWorkout);
 wireToggle('insightToggle','insightPanel','振り返り（記録の成果）',renderInsights);
 wireToggle('itemsToggle','itemsPanel','マイアイテム（登録・編集）',renderItems);
 wireToggle('bottleToggle','bottleList','ボトル管理（買い足しタイマー）',renderBottles);
