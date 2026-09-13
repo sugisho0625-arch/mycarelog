@@ -460,7 +460,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.24 — 編集中に日付を移せるようにしました（◀前の日／日付を選んで飛ぶ／次の日▶）。ケアの枠（帰宅後・日中・夜）は畳めます＝まだ記録していない最初の枠だけ開きます。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.25 — 🔴記録に入っていない欄を「未入力」と出すようにしました（以前は初期値が出ていて、画面は「70°」なのに保存に入らない食い違いがありました）。編集中に日付も移せます（◀前の日／日付を選んで飛ぶ／次の日▶）。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -1881,7 +1881,7 @@ function workoutSummary(rec){
     const unit=ex?ex.unit:'回';
     if(unit==='✓') return nm;  // チェック式＝名前だけ（回数×セットなし）
     const w = e.weight!=null ? `${e.weight}kg×` : '';   // マシン種目は重量を先頭に
-    const mi = e.minutes!=null ? ` / ${e.minutes}分` : '';  // ランニングマシンは時間を併記
+    const mi = e.minutes ? ` / ${e.minutes}分` : '';  // v0.24：0分＝未計測として表示に出さない（傾斜と同じ扱い。根拠のない数字を画面に出さない）
     const an = e.angle!=null ? ` / ${e.angle}°` : '';     // ロータリートルソーは角度を併記（v0.20）
     const inc = e.incline ? ` / 傾斜${e.incline}%` : '';  // ランニングマシンは傾斜を併記（v0.21・0は出さない）
     return `${nm} ${w}${e.amount}${unit}${mi}${inc}${e.sets>1?'×'+e.sets:''}${an}`;  // 1セットは「×1」を省略（ラン 5300m 等）
@@ -1966,6 +1966,10 @@ function buildExerciseRow(ex){
   const minutes=picked&&picked.minutes!=null?picked.minutes:def.minutes;
   const angle=picked&&picked.angle!=null?picked.angle:def.angle;
   const incline=picked&&picked.incline!=null?picked.incline:def.incline;
+  /* 🔴v0.25：記録済みの行に、その欄の値が入っていないときに既定値をそのまま見せていた。
+     画面は「70°」なのに保存には角度が入らない＝見たものと保存されるものが食い違う（2026-09-13 実害が出た）。
+     → 入っていない欄は「—（未入力）」と出し、タップで入れてもらう。根拠のない数字を画面に出さない。 */
+  const miss = f => on && picked[f]==null;
   const row=document.createElement('div');
   row.className='wk-ex'+(on?' on':'');
   const step=ex.unit==='m'?100:(ex.unit==='秒'?5:1);
@@ -1978,7 +1982,7 @@ function buildExerciseRow(ex){
     <div class="wk-head">
       <div class="box">${on?'✓':''}</div>
       <div class="wk-name">${ex.name}${ex.part&&ex.unit!=='m'?`<span class="wk-part">${ex.part}</span>`:''}</div>
-      ${on&&!checkOnly?`<div class="wk-set-summary">${useW&&weight?weight+'kg×':''}${amount}${ex.unit}${useM&&minutes?' / '+minutes+'分':''}${sets>1?'×'+sets:''}${useA&&angle!=null?' / '+angle+'°':''}${useI&&incline?' / 傾斜'+incline+'%':''}</div>`:''}
+      ${on&&!checkOnly?`<div class="wk-set-summary">${useW&&weight?weight+'kg×':''}${amount}${ex.unit}${useM?(miss('minutes')?' / <b style="color:var(--danger-ink)">時間未入力</b>':(minutes?' / '+minutes+'分':'')):''}${sets>1?'×'+sets:''}${useA?(miss('angle')?' / <b style="color:var(--danger-ink)">角度未入力</b>':' / '+angle+'°'):''}${useI&&incline?' / 傾斜'+incline+'%':''}</div>`:''}
     </div>
     ${checkOnly?'':`<div class="wk-controls">
       ${useW?`<div class="wk-ctl-row">
@@ -1991,7 +1995,7 @@ function buildExerciseRow(ex){
       ${useA?`<div class="wk-ctl-row">
         <span class="clbl">角度</span>
         <div class="stepper" data-f="angle">
-          <button data-d="-1">−</button><span class="val">${angle}</span><button data-d="1">＋</button>
+          <button data-d="-1">−</button><span class="val">${miss('angle')?'—':angle}</span><button data-d="1">＋</button>
           <span class="unit">°</span>
         </div>
       </div>`:''}
@@ -2005,8 +2009,8 @@ function buildExerciseRow(ex){
       ${useM?`<div class="wk-ctl-row">
         <span class="clbl">時間</span>
         <div class="stepper" data-f="minutes">
-          <button data-d="-1">−</button><span class="val">${minutes}</span><button data-d="1">＋</button>
-          <span class="unit">分</span>
+          <button data-d="-1">−</button><span class="val">${miss('minutes')?'—':minutes}</span><button data-d="1">＋</button>
+          <span class="unit">分<small class="wk-stephint">分からない日は0のまま＝未計測</small></span>
         </div>
       </div>`:''}
       ${useI?`<div class="wk-ctl-row">
@@ -2044,7 +2048,8 @@ function buildExerciseRow(ex){
           // v0.20：レンジがMATRIX表と違うマシン（ラットプルダウン等）は1kgずつ
           cur.weight=Math.max(0,(cur.weight||0)+dir);
         }else if(field==='angle'){
-          cur.angle=Math.max(0,(cur.angle||0)+dir*5);   // 5°刻み（段階が判明したら選択式へ）
+          /* v0.25：未入力なら、最初のタップで既定値（前回値／標準値）を入れる */
+          cur.angle = (cur.angle==null) ? def.angle : Math.max(0,(cur.angle||0)+dir*5);   // 5°刻み（段階が判明したら選択式へ）
         }else if(field==='incline'){
           // v0.21：傾斜は0.5%刻み（小数の誤差が出ないよう10倍して丸める）
           cur.incline=Math.max(0, Math.round(((cur.incline||0)+dir*0.5)*10)/10);
@@ -2054,8 +2059,11 @@ function buildExerciseRow(ex){
           if(i<0){ i=WEIGHT_STACK.findIndex(w=>w>=cur.weight); if(i<0) i=WEIGHT_STACK.length-1; }
           cur.weight=WEIGHT_STACK[Math.min(WEIGHT_STACK.length-1, Math.max(0, i+dir))];
         }else{
-          const d=dir*(field==='amount'?step:1);
-          cur[field]=Math.max(field==='sets'?1:0, (cur[field]||0)+d);
+          if(field==='minutes' && cur.minutes==null){ cur.minutes=def.minutes; }   // v0.25：未入力→既定値
+          else{
+            const d=dir*(field==='amount'?step:1);
+            cur[field]=Math.max(field==='sets'?1:0, (cur[field]||0)+d);
+          }
         }
         wstate.dirty=true;
         renderWorkout();
