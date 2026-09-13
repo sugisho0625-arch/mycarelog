@@ -351,6 +351,8 @@
   .stepper .val{
     min-width:52px; text-align:center; font-size:.95rem; font-weight:700;
     border-top:1px solid #cdd6df; border-bottom:1px solid #cdd6df; padding:7px 4px; background:#fff;
+    /* v0.26：数字そのものをタップして直接入力できる（−を45回押す、をなくす） */
+    cursor:pointer; color:var(--accent); text-decoration:underline dotted var(--accent); text-underline-offset:3px;
   }
   .stepper .unit{font-size:.74rem; color:var(--sub); margin-left:6px;}
   .wk-memo{width:100%; padding:9px 10px; border:1px solid #cdd6df; border-radius:8px; font-size:.9rem; margin-top:10px; background:#fff; color:var(--ink);}
@@ -460,7 +462,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.25 — 🔴記録に入っていない欄を「未入力」と出すようにしました（以前は初期値が出ていて、画面は「70°」なのに保存に入らない食い違いがありました）。編集中に日付も移せます（◀前の日／日付を選んで飛ぶ／次の日▶）。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.26 — 数字をタップして直接入力できるようにしました（空にすると「未入力」に戻せます）。記録に入っていない欄は「未入力」と出ます（以前は初期値が出ていて、画面は「70°」なのに保存に入らない食い違いがありました）。編集中に日付も移せます（◀前の日／日付を選んで飛ぶ／次の日▶）。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -1901,7 +1903,7 @@ function renderWorkout(){
   /* v0.22：過去日を編集するとき「この日どれを記録したか」を先に言う（全種目が並ぶので迷子になる） */
   const pickedN=Object.keys(wstate.picked).length;
   intro.textContent = pickedN
-    ? `${dayWord}の記録＝✓が付いている ${pickedN}種目。ほかは記録していません。タップで追加/取り消し。`
+    ? `${dayWord}の記録＝✓が付いている ${pickedN}種目。ほかは記録していません。タップで追加/取り消し。数字はタップで直接入力できます（空にすると未入力）。`
     : `${dayWord}やった種目をタップ → 回数・セットを記録（スキンケアとは別に保存）。`;
   el.appendChild(intro);
 
@@ -2035,6 +2037,38 @@ function buildExerciseRow(ex){
     wstate.dirty=true;
     renderWorkout();
   };
+  /* v0.26：数字をタップ＝直接入力。空にすれば「未入力」に戻せる。
+     きっかけ＝8/31の「45分」を0に戻すのに「−を45回押す」しか手が無かった（田畑さん「意味分からない」）。 */
+  row.querySelectorAll('.stepper .val').forEach(v=>{
+    v.onclick=(ev)=>{
+      ev.stopPropagation();
+      const cur=wstate.picked[ex.id];
+      if(!cur) return;
+      const field=v.parentNode.getAttribute('data-f');
+      const lab={weight:'重量', angle:'角度', amount:'1セットあたり', minutes:'時間', incline:'傾斜', sets:'セット数'}[field]||field;
+      const unit={weight:'kg', angle:'°', minutes:'分', incline:'%', sets:'セット'}[field]||ex.unit;
+      const now = cur[field]!=null ? String(cur[field]) : '';
+      const inp = prompt(ex.name+'の'+lab+'（'+unit+'）\n\n空にすると「未入力」に戻せます', now);
+      if(inp===null) return;
+      const t=String(inp).trim();
+      if(t===''){ delete cur[field]; }
+      else{
+        let n=Number(t);
+        if(!isFinite(n)||n<0){ alert('数字を入れてください（0以上）'); return; }
+        if(field==='weight' && ex.weightStep!==1){
+          // 実物のプレートに合わせる（等間隔でないため一番近い段へ）
+          n=WEIGHT_STACK.reduce((a,b)=>Math.abs(b-n)<Math.abs(a-n)?b:a, WEIGHT_STACK[0]);
+        }else if(field==='angle'){ n=Math.round(n/5)*5; }
+        else if(field==='incline'){ n=Math.round(n*2)/2; }
+        else if(field==='sets'){ n=Math.max(1,Math.round(n)); }
+        else { n=Math.round(n); }
+        cur[field]=n;
+      }
+      wstate.dirty=true;
+      renderWorkout();
+    };
+  });
+
   // ステッパー
   row.querySelectorAll('.stepper').forEach(st=>{
     const field=st.getAttribute('data-f');
