@@ -466,7 +466,9 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.27 — メモを空にして保存するときに一度確認します（黙って消えないように）。数字はタップして直接入力できます（空にすると「未入力」に戻せます）。記録に入っていない欄は「未入力」と出ます（以前は初期値が出ていて、画面は「70°」なのに保存に入らない食い違いがありました）。編集中に日付も移せます（◀前の日／日付を選んで飛ぶ／次の日▶）。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.28 — 「どれだけやるか」を指示する言葉を画面から外しました（どれだけやるかは、その日のあなたが決めることなので）。
+    過去の日は「📅 記録履歴・過去の日を直す」から直せます（編集中は日付を移動できます）。数字はタップで直接入力・空にすると「未入力」。
+    ※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -537,9 +539,12 @@ const WK_PARTS = ['押す','引く','体幹','脚'];
 const WK_PLACES = [
   {id:'home',   label:'🏠 宅トレ',     sub:'自重・回数のみ'},
   {id:'center', label:'🏋️ センター',   sub:'マシン・重量×回数'},
-  {id:'run',    label:'🏃 ランニング', sub:'屋外・マシン'},
+  {id:'run',    label:'🏃 ランニング', sub:'屋外・センターのマシン'},   /* v0.27.1：センターの機械なのに「センター」に出ないので迷った（田畑さん 2026-09-13）。区分は独立のまま＝言葉だけで解消する */
 ];
-/* MATRIXマシンのウェイト実測値（写真確認・2026-08-30）。lbs表記を丸めたkg値＝等間隔でないため実プレートを列挙 */
+/* MATRIXマシンのウェイト実測値。lbs表記を丸めたkg値＝等間隔でないため実プレートを列挙。
+   出どころ＝**2026-08-31 の品川健康センター初回来訪で田畑さんが撮った写真**（同日15:21に確定。
+   それまでは「4.5kg刻みの計算」で作っており、13.5kgのような存在しない値が出ていた）。
+   ⚠️2026-09-13 訂正＝ここは「2026-08-30」と書かれていたが誤り。8/30は「通う予定」の日で、来訪していない。 */
 const WEIGHT_STACK = [4.5,9,14,18,23,27,32,36,41,45,50,54,59,64,68,73,77,82,86,91,95,100,104];
 const DEFAULT_EXERCISES = [
   {id:'pushup_narrow', name:'腕立て（ナロー・バランスボード）', place:'home', part:'押す', unit:'回', defAmount:20, defSets:3},
@@ -608,7 +613,7 @@ const stepNightFull = () => [
   {cats:[CAT.serumGuard]},
   {cats:[CAT.retinol], choice:'attack'},
   {cats:[CAT.cream]},
-  {cats:[CAT.allinone], note:'時短の夜に（夜はUV不要なのでこれ1つでもOK）'},
+  {cats:[CAT.allinone], note:'夜はUV不要なのでこれ1つでもOK'},   /* v0.28：'時短の夜に' を削除＝判断は本人。事実だけ残す */
   {cats:[CAT.device], choice:'attack'},
   {cats:[CAT.scalp], note:'頭皮・毎日OK・レチノールと併用OK'},
   {cats:[CAT.medicine], note:'就寝前・週3回の目安（塗った後6〜10時間は洗わない）'},
@@ -625,7 +630,7 @@ const stepNightGuard = () => [
   {cats:[CAT.medicine], note:'この後すぐ就寝するなら（塗った後6〜10時間は洗わない）'},
 ];
 const stepMinimal = () => [
-  {cats:[CAT.pao], note:'余裕があれば'},
+  {cats:[CAT.pao]},   /* v0.28：'余裕があれば' を削除＝やるかどうかは本人が決める */
   {cats:[CAT.toner]},
   {cats:[CAT.vitC], note:'朝中心・少量から慣らす／使った日はUV必須（夜のレチ・美顔器とは時間帯を分ける）'},
   {cats:[CAT.allinone]},
@@ -633,7 +638,7 @@ const stepMinimal = () => [
   {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
 ];
 const stepWake = () => [
-  {cats:[CAT.toner], note:'任意・スキップOK'},
+  {cats:[CAT.toner]},   /* v0.28：'任意・スキップOK' を削除＝同上 */
   {cats:[CAT.vitC], note:'朝中心・少量から慣らす／使った日はUV必須（夜のレチ・美顔器とは時間帯を分ける）'},
   {cats:[CAT.allinone]},
   {cats:[CAT.uv], note:'外出するなら'},
@@ -679,7 +684,10 @@ function slotsFor(shift, prevNight){
       ];
     case 'off':
       return [
-        {key:'m', label:'朝（最小限）', steps:stepMinimal()},
+        /* v0.28：「朝（最小限）」から「最小限」を外した（田畑さん 2026-09-13）。
+           🔴**枠の名前は「いつ」を表すもの。「どれだけやるか」はその日の本人が決めること。**
+           道具が名前で量を指示していた。SLOT_META の 'm' は「朝 / 出勤前」なので、休みには合わないため 'm' だけ上書きする。 */
+        {key:'m', label:'朝', steps:stepMinimal()},
         {key:'n', steps:stepNightFull(),
           hint:'帰省などで夜は何もしない日は、空のまま保存すればOK（「—（ケアなし）」として残ります）。'},
       ];
