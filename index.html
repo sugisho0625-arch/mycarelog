@@ -48,6 +48,12 @@
   }
   .bbtn.primary{background:var(--accent); color:#fff;}
   .bbtn.ghost{border-color:var(--warn-line); color:var(--warn-ink);}
+  .bbtn:disabled{opacity:.4; cursor:default;}
+  /* v0.24：編集中に日付を直接選んで飛ぶ欄 */
+  .bdate{
+    flex:1.2; min-width:0; border:1px solid var(--warn-line); background:#fff; color:var(--warn-ink);
+    border-radius:9px; padding:8px 6px; font-size:.84rem; font-weight:600; font-family:inherit;
+  }
   .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
   .chip{
     border:1px solid var(--accent); background:#fff; color:var(--accent);
@@ -454,7 +460,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.23 — ケアの枠（帰宅後・日中・夜）を畳めるようにしました。開いた時点でまだ記録していない最初の枠だけ開きます（畳んだ枠は「✓N件」で中身が分かります）。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.24 — 編集中に日付を移せるようにしました（◀前の日／日付を選んで飛ぶ／次の日▶）。ケアの枠（帰宅後・日中・夜）は畳めます＝まだ記録していない最初の枠だけ開きます。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -696,6 +702,9 @@ let todayKey = dateKeyOf(new Date());
 let yesterdayKey = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dateKeyOf(d); })();
 function dayBefore(key){
   const d=new Date(key+'T00:00:00'); d.setDate(d.getDate()-1); return dateKeyOf(d);
+}
+function dayAfter(key){
+  const d=new Date(key+'T00:00:00'); d.setDate(d.getDate()+1); return dateKeyOf(d);
 }
 
 function loadLog(){ try{return JSON.parse(localStorage.getItem(LS_LOG))||[];}catch(e){return [];} }
@@ -1192,16 +1201,43 @@ function fmtMD(key){
   return `${Number(p[1])}/${Number(p[2])}`;
 }
 
+/* v0.24：編集する日を移る。未保存があれば必ず一度止める＝黙って消さない */
+function gotoDate(key){
+  if(!key || key>todayKey) return;
+  if(key===state.editDate) return;
+  if(state.dirty || wstate.dirty){
+    if(!confirm('保存していない変更があります。保存せずに '+fmtMD(key)+' へ移りますか？')) return;
+  }
+  loadStateFor(key);
+  syncWorkout(key);
+  renderAll();
+  /* その日に筋トレの記録があれば 💪 も開いておく（履歴の「この日を直す」と同じ挙動にそろえる） */
+  const wp=document.getElementById('workoutPanel');
+  if(getWorkout(key) && wp.style.display==='none') document.getElementById('workoutToggle').click();
+  window.scrollTo(0,0);
+}
+
 function renderBanner(){
   const el=document.getElementById('banner'); el.innerHTML='';
 
   if(state.editDate!==todayKey){
     const d=document.createElement('div');
     d.className='banner edit';
+    /* v0.24：別の日へ続けて移れるようにした（田畑さん＝いちいち下の履歴まで戻るのが手間）。
+       ◀▶＝隣の日／日付欄＝離れた日へ一気に飛ぶ（8/31など） */
+    const nx=dayAfter(state.editDate);
     d.innerHTML=`📝 <b>${dayLabelOf(state.editDate)}の記録を編集中</b>（変更後は「記録を保存」を押してください）
-      <div class="row"><button class="bbtn ghost" id="backToday">✅ 今日に戻る</button></div>`;
+      <div class="row">
+        <button class="bbtn ghost" id="prevDay">◀ 前の日</button>
+        <input class="bdate" type="date" id="jumpDate" value="${state.editDate}" max="${todayKey}">
+        <button class="bbtn ghost" id="nextDay"${nx>todayKey?' disabled':''}>次の日 ▶</button>
+      </div>
+      <div class="row"><button class="bbtn ghost" id="backToday">✅ 今日に戻る（編集をやめる）</button></div>`;
     el.appendChild(d);
-    d.querySelector('#backToday').onclick=()=>{ loadStateFor(todayKey); renderAll(); };
+    d.querySelector('#prevDay').onclick=()=>gotoDate(dayBefore(state.editDate));
+    d.querySelector('#nextDay').onclick=()=>gotoDate(nx);
+    d.querySelector('#jumpDate').onchange=(ev)=>gotoDate(ev.target.value);
+    d.querySelector('#backToday').onclick=()=>gotoDate(todayKey);
     return;
   }
 
@@ -1546,15 +1582,8 @@ function renderHistory(){
   });
   el.querySelectorAll('[data-e]').forEach(btn=>{
     btn.onclick=()=>{
-      const d=btn.getAttribute('data-e');
-      loadStateFor(d);
-      renderAll();
-      /* v0.22：その日に筋トレの記録があるなら 💪 も開いておく。
-         理由＝「直す」を押しても筋トレは畳まれたままで、自分で探し当てる必要があった。 */
-      if(getWorkout(d) && document.getElementById('workoutPanel').style.display==='none'){
-        document.getElementById('workoutToggle').click();
-      }
-      window.scrollTo(0,0);
+      /* v0.24：編集バナーの日付移動と同じ入口にそろえた（未保存の確認・💪の自動展開も共通） */
+      gotoDate(btn.getAttribute('data-e'));
     };
   });
   el.querySelectorAll('[data-d]').forEach(btn=>{
