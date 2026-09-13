@@ -358,8 +358,12 @@
   .wk-memo{width:100%; padding:9px 10px; border:1px solid #cdd6df; border-radius:8px; font-size:.9rem; margin-top:10px; background:#fff; color:var(--ink);}
   .wk-memo-lbl{font-size:.74rem; color:var(--sub); font-weight:600; margin:14px 0 3px;}
   .wk-save{
+    /* v0.26：筋トレの保存ボタンも画面下に浮かせる（田畑さん＝最後までスクロールしないと出てこない）。
+       ケア側の「記録を保存」は以前からsticky。こちらだけ普通の位置に置かれていた。 */
+    position:sticky; bottom:10px; z-index:20;
     background:var(--accent); color:#fff; border:none; width:100%;
     padding:13px; border-radius:11px; font-size:.95rem; font-weight:700; cursor:pointer; margin-top:14px;
+    box-shadow:0 4px 14px rgba(58,110,165,.32);
   }
   .wk-save.dirty{background:#d97b29;}
   .wk-save.saved{background:#8fa6ba;}
