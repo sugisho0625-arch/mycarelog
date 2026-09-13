@@ -99,6 +99,17 @@
     align-items:center; gap:7px;
   }
   .block-title .em{font-size:1.1rem;}
+  /* v0.23：ケアの枠を畳めるようにした（田畑さん＝項目が増えてスクロールが多い）。
+     畳んでいても「✓N」で、その枠に何件記録したかが分かる。 */
+  .slot-head{
+    width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px;
+    background:var(--card); color:var(--ink); border:1.5px solid var(--line); border-radius:12px;
+    padding:11px 13px; margin:14px 0 8px; font-size:.95rem; font-weight:700;
+    font-family:inherit; text-align:left; cursor:pointer;
+  }
+  .slot-head.open{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+  .slot-head .cnt{ font-size:.78rem; font-weight:700; color:var(--done); white-space:nowrap; }
+  .slot-head .cnt.none{ color:var(--sub); font-weight:600; }
   .auto-hint{
     font-size:.76rem; color:var(--sub); background:#eef2f6;
     border-radius:9px; padding:7px 10px; margin:0 0 10px;
@@ -400,7 +411,7 @@
 
   <!-- 💪 筋トレ記録（スキンケアとは独立・単独で保存） -->
   <div class="card" style="margin-top:18px;">
-    <button class="hist-toggle" id="workoutToggle">▸ 💪 筋トレ・ランニングを記録</button>
+    <button class="hist-toggle" id="workoutToggle">▸ 💪 筋トレ・ランニング</button>
     <div class="hist-list" id="workoutPanel" style="display:none;"></div>
   </div>
 
@@ -443,7 +454,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.22 — 過去の日を直す入口を分かりやすく（記録履歴の「✏️ この日を直す」1回で、その日の筋トレまで開きます）。保存済みの角度/傾斜が編集で消えるバグも修正。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.23 — ケアの枠（帰宅後・日中・夜）を畳めるようにしました。開いた時点でまだ記録していない最初の枠だけ開きます（畳んだ枠は「✓N件」で中身が分かります）。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -940,7 +951,21 @@ function exDefaultValue(exId){
 /* 同じ枠で同じ商品を1日に複数回（塗り直し等）記録できる上限。将来は設定画面で任意に（2026-07-20 田畑さん） */
 const MAX_USES_PER_SLOT = 5;
 
-let state = { editDate: todayKey, shift: null, noCare: false, checked: new Set(), counts: {}, dirty: false };
+let state = { editDate: todayKey, shift: null, noCare: false, checked: new Set(), counts: {}, dirty: false, openSlots: null };
+
+/* v0.23：その枠に何件記録したか */
+function checkedInSlot(key){ let n=0; state.checked.forEach(uid=>{ if(uid.slice(0,uid.indexOf(':'))===key) n++; }); return n; }
+
+/* v0.23：どの枠を開いた状態にするか＝「上から見て、まだ何も記録していない最初の枠」だけ。
+   🔴時計では決めない。夜勤の生活は時計とズレるので外れる（例＝朝9時に帰宅して就寝前ケア）。
+   記録が付いたかどうかで決めれば外れない。
+   ⚠️タップのたびには計算し直さない＝記録した瞬間に枠が閉じると押し間違える。
+      計算するのは「日付を読み込んだとき」と「シフトを変えたとき」だけ。 */
+function autoOpenSlots(){
+  if(!state.shift) return new Set();
+  const first=slotsFor(state.shift, prevWasNight()).find(sl=>checkedInSlot(sl.key)===0);
+  return new Set(first?[first.key]:[]);
+}
 
 function useCountOf(uid){ return state.counts[uid]||1; }
 
@@ -966,6 +991,7 @@ function loadStateFor(date){
     state.counts = {};
   }
   state.dirty = false;
+  state.openSlots = autoOpenSlots();   // v0.23
 }
 
 function dayWordOf(date){
@@ -1237,6 +1263,7 @@ function renderShifts(){
         });
       });
       state.checked=new Set([...state.checked].filter(uid=>valid.has(uid)));
+      state.openSlots = autoOpenSlots();   // v0.23：枠の顔ぶれが変わるので決め直す
       markDirty();
       renderAll();
     };
@@ -1302,12 +1329,23 @@ function renderRoutine(){
     return;
   }
 
+  if(!state.openSlots) state.openSlots = autoOpenSlots();   // v0.23
+
   slotsFor(state.shift, prevWasNight()).forEach(slot=>{
     const meta=SLOT_META[slot.key];
-    const h=document.createElement('div');
-    h.className='block-title';
-    h.innerHTML=`<span class="em">${meta.icon}</span>${slot.label||meta.label}`;
+    /* v0.23：枠ごとに畳む。見出しをタップで開閉。畳んでいても「✓N」で件数が分かる */
+    const open=state.openSlots.has(slot.key);
+    const n=checkedInSlot(slot.key);
+    const h=document.createElement('button');
+    h.className='slot-head'+(open?' open':'');
+    h.innerHTML=`<span><span class="em">${open?'▾':'▸'}</span> ${meta.icon} ${slot.label||meta.label}</span>`
+      +`<span class="cnt${n?'':' none'}">${n?`✓ ${n}件`:'まだ記録なし'}</span>`;
+    h.onclick=()=>{
+      if(open) state.openSlots.delete(slot.key); else state.openSlots.add(slot.key);
+      renderRoutine();
+    };
     root.appendChild(h);
+    if(!open) return;   // 畳んでいる枠は中身を作らない
 
     if(slot.hint){
       const hd=document.createElement('div');
@@ -2204,7 +2242,7 @@ function wireToggle(btnId, panelId, title, onOpen){
     if(!open && onOpen) onOpen();
   };
 }
-wireToggle('workoutToggle','workoutPanel','💪 筋トレ・ランニングを記録',renderWorkout);
+wireToggle('workoutToggle','workoutPanel','💪 筋トレ・ランニング',renderWorkout);
 wireToggle('insightToggle','insightPanel','📊 振り返り（今月の集計・直せません）',renderInsights);
 wireToggle('itemsToggle','itemsPanel','マイアイテム（登録・編集）',renderItems);
 wireToggle('bottleToggle','bottleList','ボトル管理（買い足しタイマー）',renderBottles);
