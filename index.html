@@ -466,7 +466,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.26 — 数字をタップして直接入力できるようにしました（空にすると「未入力」に戻せます）。記録に入っていない欄は「未入力」と出ます（以前は初期値が出ていて、画面は「70°」なのに保存に入らない食い違いがありました）。編集中に日付も移せます（◀前の日／日付を選んで飛ぶ／次の日▶）。※用法の判断は処方医/薬剤師が正です。</footer>
+    叩き台 v0.27 — メモを空にして保存するときに一度確認します（黙って消えないように）。数字はタップして直接入力できます（空にすると「未入力」に戻せます）。記録に入っていない欄は「未入力」と出ます（以前は初期値が出ていて、画面は「70°」なのに保存に入らない食い違いがありました）。編集中に日付も移せます（◀前の日／日付を選んで飛ぶ／次の日▶）。※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
@@ -1886,7 +1886,7 @@ function workoutSummary(rec){
     const ex=exById(e.exId); const nm=ex?ex.name.replace(/（.*?）/g,''):'種目';
     const unit=ex?ex.unit:'回';
     if(unit==='✓') return nm;  // チェック式＝名前だけ（回数×セットなし）
-    const w = e.weight!=null ? `${e.weight}kg×` : '';   // マシン種目は重量を先頭に
+    const w = e.weight!=null ? `${e.weight}kg×` : (ex&&ex.useWeight ? '重量未入力 ' : '');   // v0.27：マシン種目で重量が無い＝未入力と書く（数字を作らない）
     const mi = e.minutes ? ` / ${e.minutes}分` : '';  // v0.24：0分＝未計測として表示に出さない（傾斜と同じ扱い。根拠のない数字を画面に出さない）
     const an = e.angle!=null ? ` / ${e.angle}°` : '';     // ロータリートルソーは角度を併記（v0.20）
     const inc = e.incline ? ` / 傾斜${e.incline}%` : '';  // ランニングマシンは傾斜を併記（v0.21・0は出さない）
@@ -1988,13 +1988,13 @@ function buildExerciseRow(ex){
     <div class="wk-head">
       <div class="box">${on?'✓':''}</div>
       <div class="wk-name">${ex.name}${ex.part&&ex.unit!=='m'?`<span class="wk-part">${ex.part}</span>`:''}</div>
-      ${on&&!checkOnly?`<div class="wk-set-summary">${useW&&weight?weight+'kg×':''}${amount}${ex.unit}${useM?(miss('minutes')?' / <b style="color:var(--danger-ink)">時間未入力</b>':(minutes?' / '+minutes+'分':'')):''}${sets>1?'×'+sets:''}${useA?(miss('angle')?' / <b style="color:var(--danger-ink)">角度未入力</b>':' / '+angle+'°'):''}${useI&&incline?' / 傾斜'+incline+'%':''}</div>`:''}
+      ${on&&!checkOnly?`<div class="wk-set-summary">${useW?(miss('weight')?'<b style="color:var(--danger-ink)">重量未入力</b> ':(weight?weight+'kg×':'')):''}${amount}${ex.unit}${useM?(miss('minutes')?' / <b style="color:var(--danger-ink)">時間未入力</b>':(minutes?' / '+minutes+'分':'')):''}${sets>1?'×'+sets:''}${useA?(miss('angle')?' / <b style="color:var(--danger-ink)">角度未入力</b>':' / '+angle+'°'):''}${useI&&incline?' / 傾斜'+incline+'%':''}</div>`:''}
     </div>
     ${checkOnly?'':`<div class="wk-controls">
       ${useW?`<div class="wk-ctl-row">
         <span class="clbl">重量</span>
         <div class="stepper" data-f="weight">
-          <button data-d="-1">−</button><span class="val">${weight}</span><button data-d="1">＋</button>
+          <button data-d="-1">−</button><span class="val">${miss('weight')?'—':weight}</span><button data-d="1">＋</button>
           <span class="unit">kg${ex.weightStep===1?'<small class="wk-stephint">1kg刻み</small>':''}</span>
         </div>
       </div>`:''}
@@ -2082,7 +2082,9 @@ function buildExerciseRow(ex){
         if(!wstate.picked[ex.id]) return;
         const dir=Number(b.getAttribute('data-d'));
         const cur=wstate.picked[ex.id];
-        if(field==='weight' && ex.weightStep===1){
+        if(field==='weight' && cur.weight==null){
+          cur.weight=def.weight;   // v0.27：未入力→まず既定値を入れる
+        }else if(field==='weight' && ex.weightStep===1){
           // v0.20：レンジがMATRIX表と違うマシン（ラットプルダウン等）は1kgずつ
           cur.weight=Math.max(0,(cur.weight||0)+dir);
         }else if(field==='angle'){
@@ -2121,6 +2123,12 @@ function updateWorkoutSaveBtn(){
 }
 
 function saveWorkout(){
+  /* 🔴v0.27：メモが消える事故が2日で2件（9/12・8/31）。往復テストでは再現せず原因は未特定。
+     原因が分からないうちは「黙って消えない」ようにする＝空にして保存する時だけ一度止め、元の文を見せる。 */
+  const prevRec=getWorkout(state.editDate);
+  if(prevRec && (prevRec.memo||'').trim() && !String(wstate.memo||'').trim()){
+    if(!confirm('メモを空にして保存します。よろしいですか？\n\n元のメモ：\n'+prevRec.memo)) return;
+  }
   const entries=Object.entries(wstate.picked).map(([exId,v])=>({exId, sets:v.sets, amount:v.amount, ...(v.weight!=null?{weight:v.weight}:{}), ...(v.minutes!=null?{minutes:v.minutes}:{}), ...(v.angle!=null?{angle:v.angle}:{}), ...(v.incline?{incline:v.incline}:{})}));
   if(!entries.length && !wstate.memo){
     // 空保存＝その日の筋トレ記録を消す
