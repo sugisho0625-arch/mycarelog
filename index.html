@@ -466,8 +466,8 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.28 — 「どれだけやるか」を指示する言葉を画面から外しました（どれだけやるかは、その日のあなたが決めることなので）。
-    過去の日は「📅 記録履歴・過去の日を直す」から直せます（編集中は日付を移動できます）。数字はタップで直接入力・空にすると「未入力」。
+    叩き台 v0.29 — センターの種目を実物に合わせました（「腕」2つ→アームカール／アームエクステンション・ショルダープレスを追加・ロータリートルソーの角度は10°刻み・シーデッドローは一覧から外しました＝過去の記録は残ります）。
+    過去の日は「📅 記録履歴・過去の日を直す」から直せます。数字はタップで直接入力・空にすると「未入力」。
     ※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
 <div id="toast">✓ 保存しました</div>
@@ -567,8 +567,12 @@ const DEFAULT_EXERCISES = [
   {id:'c_chest',    name:'チェストプレス',        place:'center', part:'押す', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
   {id:'c_backext',  name:'バックエクステンション', place:'center', part:'引く', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
   {id:'c_abdominal',name:'アブドミナルクランチ',   place:'center', part:'体幹', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20},
-  /* ロータリートルソー＝捻りの角度も記録（v0.20・田畑さん要望）。段階式のマシンだが段階は未確認＝当面5°刻みの自由入力・初期値は本人の実測70° */
+  /* ロータリートルソー＝捻りの角度も記録（v0.20・田畑さん要望）。初期値は本人の実測70°。
+     v0.29：**刻みは10°**（2026-09-18 本人がマシンで確認）。⚠️上限・下限は未確認＝当面は0以上の自由値。 */
   {id:'c_torso',    name:'ロータリートルソー',     place:'center', part:'体幹', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20, useAngle:true, defAngle:70},
+  /* v0.29：ショルダープレス＝2026-09-18 に本人が初めてやった種目（27kg・5回・3セット）。重量の刻みはMATRIXの表を仮に使う（27は表にある）。
+     ⚠️このマシンの目盛りが表と同じかは未確認。 */
+  {id:'c_shoulder', name:'ショルダープレス',       place:'center', part:'押す', unit:'回', defAmount:5,  defSets:3, useWeight:true, defWeight:27},
   /* ランニングマシン＝距離(m)＋時間(分)＋傾斜(%)。平均速度は距離÷時間で後から算出可。
      🔴傾斜を足した理由（v0.21・2026-09-13）＝2026-08-30には「入力が重くなる」としてメモ運用にしたが、
      屋外→マシンで**気温という負荷の変数が消えた**ため、傾斜が残る唯一の負荷条件になった。
@@ -884,6 +888,22 @@ function newItemId(){ return 'u'+Date.now().toString(36)+Math.floor(Math.random(
   // v0.20：ラットプルダウン／シーテッドロウ（本人がスマホで追加済み）は重量のレンジがMATRIX表と違う＝1kg刻みへ。
   //  名前で判定（IDは端末生成のため不明）。外れた場合は編集画面の「重量の刻み」で切替可能。
   a.forEach(e=>{ if(e.useWeight && e.weightStep==null && /ラットプル|シーテッド/.test(e.name||'')){ e.weightStep=1; changed=true; } });
+  /* v0.29：「腕」2件の正式名称（2026-09-18 本人がマシンで確認）。両方とも名前が「腕」で見分けられず、
+     9/18は記録に入れられずメモに逃げていた（"ARM CURL 27 5 3, ARM EXTENSION 27 5 3"）。
+     IDは本人の端末で作られたもの。⚠️**IDと現在の名前「腕」と部位が全部一致するときだけ**直す＝本人が改名していたら触らない。 */
+  [['wmtxobiec82','引く','アームカール'],['wmtxob6lh26','押す','アームエクステンション']].forEach(([id,part,nm])=>{
+    const e=a.find(x=>x.id===id);
+    if(e && e.name==='腕' && e.part===part){ e.name=nm; changed=true; }
+  });
+  /* v0.29：シーデッドローを一覧から外す（田畑さんの判断・2026-09-18）。
+     「違うマシンだが同じ部位。今後はラットプルダウンと同じ1台（シーテッドロウ）で対応する。使っていない方は一旦削除」。
+     ⚠️消すのではなく「一覧から外す」＝アプリの削除ボタンと同じ扱い。**9/12の記録（36kg×10回×3）は名前つきで残る。**
+     1回だけ実行（印を残す）＝あとで一覧に戻したとき、次に開いた瞬間また外れる、を防ぐ。 */
+  if(!localStorage.getItem('mcl_mig_v029_seadedrow')){
+    const sd=a.find(x=>x.id==='wmtxn4sm434');
+    if(sd && sd.name==='シーデッドロー' && !sd.archived){ sd.archived=true; changed=true; }
+    localStorage.setItem('mcl_mig_v029_seadedrow','1');
+  }
   if(changed) localStorage.setItem(LS_EXERCISES, JSON.stringify(a));
 })();
 function allExercises(){ try{return JSON.parse(localStorage.getItem(LS_EXERCISES))||[];}catch(e){return [];} }
@@ -1924,7 +1944,9 @@ function renderWorkout(){
     : `${dayWord}やった種目をタップ → 回数・セットを記録（スキンケアとは別に保存）。`;
   el.appendChild(intro);
 
-  const exs=activeExercises();
+  /* v0.29：一覧から外した種目でも、その日に記録があれば画面に出す。
+     出さないと「記録にはあるのに画面に無い」＝件数は10なのに9行しか見えない、になる（シーデッドローの9/12で発生）。 */
+  const exs=[...activeExercises(), ...allExercises().filter(e=>e.archived && wstate.picked[e.id])];
   const cnt=countByPlace();
   /* v0.17：場所ごとに大きく分ける（普段は片方しか使わないので、開いている方だけ表示）。
      部位(part)はデータとして保持＝集計時に押す/引くのバランス分析ができる */
@@ -2000,7 +2022,7 @@ function buildExerciseRow(ex){
   row.innerHTML=`
     <div class="wk-head">
       <div class="box">${on?'✓':''}</div>
-      <div class="wk-name">${ex.name}${ex.part&&ex.unit!=='m'?`<span class="wk-part">${ex.part}</span>`:''}</div>
+      <div class="wk-name">${ex.name}${ex.part&&ex.unit!=='m'?`<span class="wk-part">${ex.part}</span>`:''}${ex.archived?'<span class="wk-part" style="background:#eee;color:var(--sub)">一覧から外した種目</span>':''}</div>
       ${on&&!checkOnly?`<div class="wk-set-summary">${useW?(miss('weight')?'<b style="color:var(--danger-ink)">重量未入力</b> ':(weight?weight+'kg×':'')):''}${amount}${ex.unit}${useM?(miss('minutes')?' / <b style="color:var(--danger-ink)">時間未入力</b>':(minutes?' / '+minutes+'分':'')):''}${sets>1?'×'+sets:''}${useA?(miss('angle')?' / <b style="color:var(--danger-ink)">角度未入力</b>':' / '+angle+'°'):''}${useI&&incline?' / 傾斜'+incline+'%':''}</div>`:''}
     </div>
     ${checkOnly?'':`<div class="wk-controls">
@@ -2075,7 +2097,7 @@ function buildExerciseRow(ex){
         if(field==='weight' && ex.weightStep!==1){
           // 実物のプレートに合わせる（等間隔でないため一番近い段へ）
           n=WEIGHT_STACK.reduce((a,b)=>Math.abs(b-n)<Math.abs(a-n)?b:a, WEIGHT_STACK[0]);
-        }else if(field==='angle'){ n=Math.round(n/5)*5; }
+        }else if(field==='angle'){ n=Math.round(n/10)*10; }   // v0.29：実物は10°刻み
         else if(field==='incline'){ n=Math.round(n*2)/2; }
         else if(field==='sets'){ n=Math.max(1,Math.round(n)); }
         else { n=Math.round(n); }
@@ -2102,7 +2124,7 @@ function buildExerciseRow(ex){
           cur.weight=Math.max(0,(cur.weight||0)+dir);
         }else if(field==='angle'){
           /* v0.25：未入力なら、最初のタップで既定値（前回値／標準値）を入れる */
-          cur.angle = (cur.angle==null) ? def.angle : Math.max(0,(cur.angle||0)+dir*5);   // 5°刻み（段階が判明したら選択式へ）
+          cur.angle = (cur.angle==null) ? def.angle : Math.max(0,(cur.angle||0)+dir*10);   // v0.29：10°刻み（2026-09-18 本人確認・上限下限は未確認）
         }else if(field==='incline'){
           // v0.21：傾斜は0.5%刻み（小数の誤差が出ないよう10倍して丸める）
           cur.incline=Math.max(0, Math.round(((cur.incline||0)+dir*0.5)*10)/10);
