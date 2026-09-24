@@ -466,7 +466,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.29 — センターの種目を実物に合わせました（「腕」2つ→アームカール／アームエクステンション・ショルダープレスを追加・ロータリートルソーの角度は10°刻み・最大70°・シーデッドローは一覧から外しました＝過去の記録は残ります）。
+    叩き台 v0.31 — 夜勤初日の「日中」に守りの美容液（アルティミューン）の行を足しました＝夜勤初日は就寝前の枠が無く、記録する場所がありませんでした。ショルダープレスは1kg刻み。
     過去の日は「📅 記録履歴・過去の日を直す」から直せます。数字はタップで直接入力・空にすると「未入力」。
     ※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
@@ -570,9 +570,10 @@ const DEFAULT_EXERCISES = [
   /* ロータリートルソー＝捻りの角度も記録（v0.20・田畑さん要望）。初期値は本人の実測70°。
      v0.29：**10°刻み・上限70°**（2026-09-18 本人がマシンで確認）。⚠️下限は未確認＝当面は0まで。 */
   {id:'c_torso',    name:'ロータリートルソー',     place:'center', part:'体幹', unit:'回', defAmount:10, defSets:3, useWeight:true, defWeight:20, useAngle:true, defAngle:70, maxAngle:70},
-  /* v0.29：ショルダープレス＝2026-09-18 に本人が初めてやった種目（27kg・5回・3セット）。重量の刻みはMATRIXの表を仮に使う（27は表にある）。
-     ⚠️このマシンの目盛りが表と同じかは未確認。 */
-  {id:'c_shoulder', name:'ショルダープレス',       place:'center', part:'押す', unit:'回', defAmount:5,  defSets:3, useWeight:true, defWeight:27},
+  /* v0.29：ショルダープレス＝2026-09-18 に本人が初めてやった種目（27kg・5回・3セット）。
+     v0.30：**1kg刻みにした**。本人「目盛りはマシンによって違う」（2026-09-18）＝チェストプレス等の表を当てるのは推測。
+     表を当てたままだと、打った数字が近い目盛りに勝手に変わる（29→27）＝本人の実測値を道具が書き換える。目盛りが分かったら表にする。 */
+  {id:'c_shoulder', name:'ショルダープレス',       place:'center', part:'押す', unit:'回', defAmount:5,  defSets:3, useWeight:true, defWeight:27, weightStep:1},
   /* ランニングマシン＝距離(m)＋時間(分)＋傾斜(%)。平均速度は距離÷時間で後から算出可。
      🔴傾斜を足した理由（v0.21・2026-09-13）＝2026-08-30には「入力が重くなる」としてメモ運用にしたが、
      屋外→マシンで**気温という負荷の変数が消えた**ため、傾斜が残る唯一の負荷条件になった。
@@ -641,6 +642,19 @@ const stepMinimal = () => [
   {cats:[CAT.uv], note:'外出するなら'},
   {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
 ];
+/* v0.31：夜勤初日の日中だけ「守りの美容液」も出す。
+   🔴理由＝夜勤初日は「夜／就寝前」の枠が存在せず、**毎晩必須の守りを塗る場所がアプリのどこにも無かった**。
+   2026-09-24、田畑さんが実際に日中に使い「カウント画面がなかった」と報告＝道具が受け取れず記録が落ちる形。
+   ⚠️「朝は守りの美容液を使わない」（spec §4・2026-06-24の運用）は早番・遅番・休みでは変えない。ここは夜勤初日だけ。
+   塗る順＝化粧水 → ビタミンC(水溶性が先) → 守りの美容液 → オールインワン（spec §4の原則どおり）。 */
+const stepWakeNight = () => [
+  {cats:[CAT.toner]},
+  {cats:[CAT.vitC], note:'朝中心・少量から慣らす／使った日はUV必須（夜のレチ・美顔器とは時間帯を分ける）'},
+  {cats:[CAT.serumGuard], note:'夜勤初日は就寝前の枠が無いので、日中に塗ったらここに記録'},
+  {cats:[CAT.allinone]},
+  {cats:[CAT.uv], note:'外出するなら'},
+  {cats:[CAT.scalp], note:'頭皮・朝も可（1日合計30分以内）'},
+];
 const stepWake = () => [
   {cats:[CAT.toner]},   /* v0.28：'任意・スキップOK' を削除＝同上 */
   {cats:[CAT.vitC], note:'朝中心・少量から慣らす／使った日はUV必須（夜のレチ・美顔器とは時間帯を分ける）'},
@@ -673,7 +687,7 @@ function slotsFor(shift, prevNight){
           hint:'前日も夜勤の記録があるので、帰宅後（朝）の枠を表示しています。'});
       }else{
         // 初日：前夜は普通に寝て朝起きている＝日中の通常スキンケア
-        s.push({key:'kishou', steps:stepWake(),
+        s.push({key:'kishou', steps:stepWakeNight(),
           hint:'夜勤初日：日中は普通に起きているので通常の日中ケア。前日も夜勤として記録すると、代わりに「帰宅後（朝）」の守りケア枠になります。'});
       }
       s.push({key:'shukkin', steps:stepShukkin()});
@@ -883,6 +897,8 @@ function newItemId(){ return 'u'+Date.now().toString(36)+Math.floor(Math.random(
   const rt=a.find(e=>e.id==='c_torso');
   if(rt && !rt.useAngle){ rt.useAngle=true; rt.defAngle=70; changed=true; }
   if(rt && rt.maxAngle==null){ rt.maxAngle=70; changed=true; }   // v0.29：上限70°（2026-09-18 本人）
+  const sp=a.find(e=>e.id==='c_shoulder');
+  if(sp && sp.weightStep==null){ sp.weightStep=1; changed=true; }   // v0.30：目盛り未確認のうちは1kg刻み（本人が刻みを設定していたら触らない）
   // v0.21：ランニングマシンに傾斜(%)欄を補完
   const tm2=a.find(e=>e.id==='c_treadmill');
   if(tm2 && !tm2.useIncline){ tm2.useIncline=true; tm2.defIncline=0; changed=true; }
