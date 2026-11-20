@@ -348,6 +348,8 @@
   }
   .stepper button:first-child{border-radius:8px 0 0 8px;}
   .stepper button:last-child{border-radius:0 8px 8px 0;}
+  /* v0.33：長押しで文字選択・メニュー・画面スクロールが起きないように */
+  .stepper button{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; touch-action:none; }
   .stepper .val{
     min-width:52px; text-align:center; font-size:.95rem; font-weight:700;
     border-top:1px solid #cdd6df; border-bottom:1px solid #cdd6df; padding:7px 4px; background:#fff;
@@ -466,7 +468,7 @@
   <footer>
     やったものをタップ → 最後に「記録を保存」。<br>
     記録は端末内（localStorage）にのみ保存されます。<br>
-    叩き台 v0.32 — 服薬は各自がマイアイテムで登録する形にしました（用法はアイテムのメモに書くと、夜の案内に表示されます）。
+    叩き台 v0.33 — ＋−を押し続けると連続で変わるようにしました（ランニングの距離は、1秒を過ぎると500mずつになります）。
     過去の日は「📅 記録履歴・過去の日を直す」から直せます。数字はタップで直接入力・空にすると「未入力」。
     ※用法の判断は処方医/薬剤師が正です。</footer>
 </div>
@@ -2136,43 +2138,88 @@ function buildExerciseRow(ex){
   // ステッパー
   row.querySelectorAll('.stepper').forEach(st=>{
     const field=st.getAttribute('data-f');
+    const valEl=st.querySelector('.val');
     st.querySelectorAll('button').forEach(b=>{
-      b.onclick=(ev)=>{
+      const dir=Number(b.getAttribute('data-d'));
+      /* v0.33：押し続けると連続で変わる（本人 2026-11-20）。
+         短く押す＝1回分（離したときに確定）／押し続ける＝0.4秒後から連続。
+         ランニングの距離だけ、押し始めて1秒を過ぎたら 100m → 500m ずつに速くなる（本人指定の2段階）。
+         押している間は数字だけ書き換え、離したときに画面全体を描き直す（途中で描き直すとボタンが入れ替わり、離したことを拾えなくなるため）。 */
+      b.oncontextmenu=(ev)=>ev.preventDefault();
+      b.onpointerdown=(ev)=>{
         ev.stopPropagation();
         if(!wstate.picked[ex.id]) return;
-        const dir=Number(b.getAttribute('data-d'));
-        const cur=wstate.picked[ex.id];
-        if(field==='weight' && cur.weight==null){
-          cur.weight=def.weight;   // v0.27：未入力→まず既定値を入れる
-        }else if(field==='weight' && ex.weightStep===1){
-          // v0.20：レンジがMATRIX表と違うマシン（ラットプルダウン等）は1kgずつ
-          cur.weight=Math.max(0,(cur.weight||0)+dir);
-        }else if(field==='angle'){
-          /* v0.25：未入力なら、最初のタップで既定値（前回値／標準値）を入れる */
-          const mx = ex.maxAngle!=null ? ex.maxAngle : Infinity;   // v0.29：上限（ロータリートルソー＝70°）
-          cur.angle = (cur.angle==null) ? Math.min(def.angle,mx) : Math.min(mx, Math.max(0,(cur.angle||0)+dir*10));   // 10°刻み
-        }else if(field==='incline'){
-          // v0.21：傾斜は0.5%刻み（小数の誤差が出ないよう10倍して丸める）
-          cur.incline=Math.max(0, Math.round(((cur.incline||0)+dir*0.5)*10)/10);
-        }else if(field==='weight'){
-          // 実物のプレートを1段ずつ移動（等間隔でないため）
-          let i=WEIGHT_STACK.indexOf(cur.weight);
-          if(i<0){ i=WEIGHT_STACK.findIndex(w=>w>=cur.weight); if(i<0) i=WEIGHT_STACK.length-1; }
-          cur.weight=WEIGHT_STACK[Math.min(WEIGHT_STACK.length-1, Math.max(0, i+dir))];
-        }else{
-          if(field==='minutes' && cur.minutes==null){ cur.minutes=def.minutes; }   // v0.25：未入力→既定値
-          else{
-            const d=dir*(field==='amount'?step:1);
-            cur[field]=Math.max(field==='sets'?1:0, (cur[field]||0)+d);
-          }
-        }
-        wstate.dirty=true;
-        renderWorkout();
+        if(ev.pointerType==='mouse' && ev.button!==0) return;
+        wkHoldStart({ex, def, field, dir, valEl});
+      };
+      b.onpointerup=(ev)=>{ ev.stopPropagation(); wkHoldEnd(false); };
+      b.onpointerleave=()=>wkHoldEnd(true);
+      b.onpointercancel=()=>wkHoldEnd(true);
+      b.onclick=(ev)=>{
+        ev.stopPropagation();
+        if(ev.detail===0 && wstate.picked[ex.id]){ wkApplyStep(ex, def, field, dir, 1); renderWorkout(); }   // キーボード操作だけ（指・マウスは上の押す/離すで処理）
       };
     });
   });
   return row;
 }
+
+/* v0.33：＋−1回分の変化（従来の押した時の処理をそのまま関数にした）。mult＝ランニング距離の倍率（500mずつのとき5） */
+function wkApplyStep(ex, def, field, dir, mult){
+  const cur=wstate.picked[ex.id];
+  if(!cur) return;
+  const step=ex.unit==='m'?100:(ex.unit==='秒'?5:1);
+  if(field==='weight' && cur.weight==null){
+    cur.weight=def.weight;   // v0.27：未入力→まず既定値を入れる
+  }else if(field==='weight' && ex.weightStep===1){
+    cur.weight=Math.max(0,(cur.weight||0)+dir);   // v0.20：1kg刻みのマシン
+  }else if(field==='angle'){
+    const mx = ex.maxAngle!=null ? ex.maxAngle : Infinity;   // v0.29：上限（ロータリートルソー＝70°）
+    cur.angle = (cur.angle==null) ? Math.min(def.angle,mx) : Math.min(mx, Math.max(0,(cur.angle||0)+dir*10));
+  }else if(field==='incline'){
+    cur.incline=Math.max(0, Math.round(((cur.incline||0)+dir*0.5)*10)/10);   // v0.21：0.5%刻み
+  }else if(field==='weight'){
+    let i=WEIGHT_STACK.indexOf(cur.weight);   // 実物のプレートを1段ずつ
+    if(i<0){ i=WEIGHT_STACK.findIndex(w=>w>=cur.weight); if(i<0) i=WEIGHT_STACK.length-1; }
+    cur.weight=WEIGHT_STACK[Math.min(WEIGHT_STACK.length-1, Math.max(0, i+dir))];
+  }else if(field==='minutes' && cur.minutes==null){
+    cur.minutes=def.minutes;   // v0.25：未入力→既定値
+  }else{
+    const d=dir*(field==='amount'?step*(mult||1):1);
+    cur[field]=Math.max(field==='sets'?1:0, (cur[field]||0)+d);
+  }
+  wstate.dirty=true;
+}
+/* v0.33：長押し。押している間は数字だけ書き換える */
+let wkHold=null;
+const WK_HOLD_DELAY=400, WK_HOLD_EVERY=180, WK_FAST_AFTER=1000, WK_FAST_MULT=5;
+function wkHoldStart(h){
+  wkHoldEnd(true);
+  h.t0=Date.now(); h.fired=false;
+  h.timer=setTimeout(()=>{
+    h.fired=true;
+    const tick=()=>{
+      const fast = h.ex.unit==='m' && h.field==='amount' && (Date.now()-h.t0)>=WK_FAST_AFTER;
+      wkApplyStep(h.ex, h.def, h.field, h.dir, fast?WK_FAST_MULT:1);
+      const v=(wstate.picked[h.ex.id]||{})[h.field];
+      if(h.valEl && v!=null) h.valEl.textContent=v;
+    };
+    tick();
+    h.iv=setInterval(tick, WK_HOLD_EVERY);
+  }, WK_HOLD_DELAY);
+  wkHold=h;
+}
+function wkHoldEnd(cancel){
+  const h=wkHold; if(!h) return;
+  wkHold=null;
+  clearTimeout(h.timer); clearInterval(h.iv);
+  if(!h.fired && !cancel) wkApplyStep(h.ex, h.def, h.field, h.dir, 1);   // 短く押した＝1回分
+  if(h.fired || !cancel) renderWorkout();
+}
+window.addEventListener('pointerup', ()=>wkHoldEnd(false));
+window.addEventListener('pointercancel', ()=>wkHoldEnd(true));
+window.addEventListener('blur', ()=>wkHoldEnd(true));
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) wkHoldEnd(true); });
 
 function updateWorkoutSaveBtn(){
   const b=document.getElementById('wkSaveBtn'); if(!b) return;
